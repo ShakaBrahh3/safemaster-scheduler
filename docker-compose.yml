@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  safemaster-scheduler:
+    build: .
+    container_name: safemaster_app
+    ports:
+      - "8080:80"  # Exposes the scheduler on http://localhost:8080
+    restart: always
+    environment:
+      - NODE_ENV=production
