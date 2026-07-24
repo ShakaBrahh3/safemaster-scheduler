@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { usePersistedState } from './hooks/usePersistedState';
 import { 
   Calendar, 
   Users, 
@@ -31,8 +32,7 @@ import {
 } from 'lucide-react';
 
 // Component imports
-import MapPreview from './components/MapPreview';
-import { CrewManagementModal, CrewCard } from './components/CrewComponents';
+import { CrewManagementModal } from './components/CrewComponents';
 import { CreateJobModal, JobDetailModal } from './components/JobModals';
 import { RouteOptimizationModal } from './components/RouteOptimizationModal';
 import ScheduleGrid from './components/ScheduleGrid';
@@ -299,9 +299,9 @@ const RUN_STYLES = {
 };
 
 export default function App() {
-  const [backlog, setBacklog] = useState(INITIAL_BACKLOG);
-  const [schedule, setSchedule] = useState(INITIAL_SCHEDULE);
-  const [crews, setCrews] = useState(INITIAL_CREWS);
+  const [backlog, setBacklog] = usePersistedState('safemaster-backlog', INITIAL_BACKLOG);
+  const [schedule, setSchedule] = usePersistedState('safemaster-schedule', INITIAL_SCHEDULE);
+  const [crews, setCrews] = usePersistedState('safemaster-crews', INITIAL_CREWS);
   
   const [selectedJob, setSelectedJob] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -352,10 +352,7 @@ export default function App() {
   // Route Optimization state
   const [showAIOptimizeModal, setShowAIOptimizeModal] = useState(false);
   const [optimizedSchedule, setOptimizedSchedule] = useState(null);
-
-  // Map view state
-  const [showMapModal, setShowMapModal] = useState(false);
-  const [mapJobId, setMapJobId] = useState(null);
+  const [skippedJobs, setSkippedJobs] = useState([]);
 
   // Calculate statistics
   const totalWeeklyValue = schedule.reduce((sum, job) => sum + Number(job.cost || 0), 0);
@@ -404,19 +401,20 @@ export default function App() {
   };
 
   const handleDeleteCrew = (crewId) => {
-    if (confirm("Are you sure? This will unassign all their scheduled jobs.")) {
-      setCrews(crews.filter(c => c.id !== crewId));
+    if (confirm("Are you sure? This will unassign all their scheduled jobs and return them to the backlog.")) {
+      const jobsToUnassign = schedule
+        .filter(j => j.crewId === crewId)
+        .map(job => {
+          const updated = { ...job, status: "backlog" };
+          delete updated.day;
+          delete updated.crewId;
+          return updated;
+        });
+      setBacklog([...backlog, ...jobsToUnassign]);
       setSchedule(schedule.filter(j => j.crewId !== crewId));
-      alert("Crew removed successfully!");
+      setCrews(crews.filter(c => c.id !== crewId));
+      alert("Crew removed. Their jobs have been returned to the backlog.");
     }
-  };
-
-  const handleNewCrewToggleTicket = (ticketCode) => {
-    const hasIt = newCrew.tickets.includes(ticketCode);
-    setNewCrew({
-      ...newCrew,
-      tickets: hasIt ? newCrew.tickets.filter(t => t !== ticketCode) : [...newCrew.tickets, ticketCode]
-    });
   };
 
   // Route Optimization (Local Heuristic)
@@ -436,12 +434,13 @@ export default function App() {
     });
 
     const assignments = [];
+    const skipped = [];
     const dayCrewMap = {};
 
     sortedJobs.forEach(job => {
       const qualifiedCrews = crews.filter(crew => crew.tickets.includes(job.requiredTicket));
       if (qualifiedCrews.length === 0) {
-        console.warn(`No qualified crew for ${job.site}, needs ${job.requiredTicket}`);
+        skipped.push(job);
         return;
       }
 
@@ -469,6 +468,7 @@ export default function App() {
     });
 
     setOptimizedSchedule(assignments);
+    setSkippedJobs(skipped);
     setShowAIOptimizeModal(true);
   };
 
@@ -478,6 +478,7 @@ export default function App() {
       setBacklog(backlog.filter(j => !optimizedSchedule.find(o => o.id === j.id)));
       setShowAIOptimizeModal(false);
       setOptimizedSchedule(null);
+      setSkippedJobs([]);
       alert("Optimized route assignments applied!");
     }
   };
@@ -507,6 +508,20 @@ export default function App() {
   const handleDropOnCell = (e, day, crewId) => {
     e.preventDefault();
     if (!draggedJobId) return;
+
+    const job = dragSource === "backlog"
+      ? backlog.find(j => j.id === draggedJobId)
+      : schedule.find(j => j.id === draggedJobId);
+
+    if (job && checkTicketConflict(job, crewId)) {
+      const crew = crews.find(c => c.id === crewId);
+      const ticketName = TICKETS[job.requiredTicket]?.name || job.requiredTicket;
+      if (!confirm(`SAFETY WARNING: ${crew?.name || 'This crew'} does not hold the required ${ticketName} ticket.\n\nAssign anyway? (Not recommended for compliance)`)) {
+        setDraggedJobId(null);
+        setDragSource(null);
+        return;
+      }
+    }
 
     if (dragSource === "backlog") {
       const jobIndex = backlog.findIndex(j => j.id === draggedJobId);
@@ -701,16 +716,21 @@ export default function App() {
   };
 
   // Copy helper
-  const handleCopyText = (text, crewId) => {
-    const tempInput = document.createElement("textarea");
-    tempInput.value = text;
-    document.body.appendChild(tempInput);
-    tempInput.select();
-    document.execCommand("copy");
-    document.body.removeChild(tempInput);
-
-    setCopiedStatus(crewId);
-    setTimeout(() => setCopiedStatus(null), 2000);
+  const handleCopyText = async (text, crewId) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedStatus(crewId);
+      setTimeout(() => setCopiedStatus(null), 2000);
+    } catch {
+      const tempInput = document.createElement("textarea");
+      tempInput.value = text;
+      document.body.appendChild(tempInput);
+      tempInput.select();
+      document.execCommand("copy");
+      document.body.removeChild(tempInput);
+      setCopiedStatus(crewId);
+      setTimeout(() => setCopiedStatus(null), 2000);
+    }
   };
 
   // Filters backlog items
@@ -742,7 +762,7 @@ export default function App() {
           <span>SYSTEM UPGRADED: Dynamic Competency Rules & SMS Dispatcher Enabled</span>
         </div>
         <div className="hidden md:flex items-center gap-4 text-white/90">
-          <span>Active Crews: 4</span>
+          <span>Active Crews: {crews.length}</span>
           <span>Safety Code Compliance: Standard WA 2026</span>
         </div>
       </div>
@@ -1134,199 +1154,69 @@ export default function App() {
 
       </main>
 
-      {/* JOB DETAIL EDITING MODAL */}
-      {selectedJob && (
+      {/* EXCEL/CSV IMPORT MODAL */}
+      {showImportModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95">
-            <div className="bg-gradient-to-r from-teal-600 to-emerald-600 p-4 flex justify-between items-center text-white">
-              <div>
-                <span className="text-[10px] uppercase font-bold tracking-widest bg-white/20 px-2 py-0.5 rounded">
-                  {selectedJob.status === "scheduled" ? "Allocated Task Details" : "Unscheduled Master Database"}
-                </span>
-                <h3 className="text-lg font-bold mt-1">{selectedJob.site}</h3>
-              </div>
-              <button 
-                onClick={() => setSelectedJob(null)}
-                className="text-white/80 hover:text-white bg-black/10 hover:bg-black/20 p-1.5 rounded-full transition-colors text-sm font-bold"
+          <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-2xl shadow-2xl overflow-hidden">
+            <div className="bg-slate-950 p-4 border-b border-slate-800 flex justify-between items-center">
+              <h3 className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-2">
+                <Upload className="h-4 w-4 text-teal-400" />
+                Excel / CSV Importer
+              </h3>
+              <button
+                type="button"
+                onClick={() => { setShowImportModal(false); setImportFeedback(""); }}
+                className="text-slate-400 hover:text-white"
               >
                 ✕
               </button>
             </div>
 
             <div className="p-6 space-y-4">
-              {/* Site Name and Cost */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs text-slate-400 font-medium uppercase tracking-wider block mb-1">Site / Facility Name</label>
-                  <input 
-                    type="text" 
-                    value={selectedJob.site}
-                    onChange={(e) => {
-                      const updated = { ...selectedJob, site: e.target.value };
-                      setSelectedJob(updated);
-                    }}
-                    className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-400 font-medium uppercase tracking-wider block mb-1">Recertification Cost ($)</label>
-                  <input 
-                    type="number" 
-                    value={selectedJob.cost}
-                    onChange={(e) => {
-                      const updated = { ...selectedJob, cost: parseFloat(e.target.value) || 0 };
-                      setSelectedJob(updated);
-                    }}
-                    className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
+              <p className="text-[12px] text-slate-400 bg-slate-950/50 p-3 rounded border border-slate-800">
+                Paste tab- or comma-separated rows: <strong className="text-slate-300">Site, Cost, Run, Notes</strong>.
+                Ticket requirements are auto-detected from notes (EWP, rope, confined space, etc.).
+              </p>
 
-              {/* Inspector Ticket Required selection */}
-              <div>
-                <label className="text-xs text-slate-400 font-medium uppercase tracking-wider block mb-1">Mandated Inspector Competency Ticket</label>
-                <select 
-                  value={selectedJob.requiredTicket || "WAH"}
-                  onChange={(e) => {
-                    const updated = { ...selectedJob, requiredTicket: e.target.value };
-                    setSelectedJob(updated);
-                  }}
-                  className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                >
-                  {Object.values(TICKETS).map(t => (
-                    <option key={t.code} value={t.code}>{t.name} ({t.code})</option>
-                  ))}
-                </select>
-              </div>
+              <textarea
+                rows={8}
+                value={csvInput}
+                onChange={(e) => setCsvInput(e.target.value)}
+                placeholder="Site Name&#9;1250.00&#9;SOUTHWEST RUN&#9;Annual anchor point testing..."
+                className="w-full bg-slate-950 border border-slate-800 p-3 rounded-lg text-xs font-mono text-slate-200 focus:outline-none focus:border-teal-500 placeholder-slate-600"
+              />
 
-              {/* Run Classification Selection */}
-              <div>
-                <label className="text-xs text-slate-400 font-medium uppercase tracking-wider block mb-1">Run Assignment Group</label>
-                <select 
-                  value={selectedJob.run}
-                  onChange={(e) => {
-                    const updated = { ...selectedJob, run: e.target.value };
-                    setSelectedJob(updated);
-                  }}
-                  className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                >
-                  {Object.keys(RUN_STYLES).map(run => (
-                    <option key={run} value={run}>{run}</option>
-                  ))}
-                </select>
-              </div>
+              {importFeedback && (
+                <p className={`text-xs font-semibold ${importFeedback.includes("Successfully") ? "text-emerald-400" : "text-amber-400"}`}>
+                  {importFeedback}
+                </p>
+              )}
 
-              {/* Special Site Instructions & Access Notes */}
-              <div>
-                <label className="text-xs text-slate-400 font-medium uppercase tracking-wider block mb-1">Special Site Access Instructions / Notes</label>
-                <textarea 
-                  rows={3}
-                  value={selectedJob.notes}
-                  onChange={(e) => {
-                    const updated = { ...selectedJob, notes: e.target.value };
-                    setSelectedJob(updated);
-                  }}
-                  className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                  placeholder="e.g. key pickup, EWP booked, onsite contact name..."
-                />
-              </div>
-
-              {/* Height Safety Requirements Checklist */}
-              <div className="bg-slate-950 p-4 rounded-lg border border-slate-850">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Height Safety Compliance Checklists</h4>
-                
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <label className="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white">
-                    <input 
-                      type="checkbox"
-                      checked={selectedJob.ewpRequired}
-                      onChange={(e) => {
-                        const updated = { ...selectedJob, ewpRequired: e.target.checked };
-                        setSelectedJob(updated);
-                      }}
-                      className="accent-emerald-500 h-4 w-4 bg-slate-900 border-slate-800 rounded"
-                    />
-                    <span>EWP Access Needed</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white">
-                    <input 
-                      type="checkbox"
-                      checked={selectedJob.tags.includes("Anchor Testing")}
-                      onChange={(e) => {
-                        const newTags = e.target.checked 
-                          ? [...selectedJob.tags, "Anchor Testing"] 
-                          : selectedJob.tags.filter(t => t !== "Anchor Testing");
-                        setSelectedJob({ ...selectedJob, tags: newTags });
-                      }}
-                      className="accent-emerald-500 h-4 w-4 bg-slate-900 border-slate-800 rounded"
-                    />
-                    <span>Anchor point test cert</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white">
-                    <input 
-                      type="checkbox"
-                      checked={selectedJob.tags.includes("Static Line")}
-                      onChange={(e) => {
-                        const newTags = e.target.checked 
-                          ? [...selectedJob.tags, "Static Line"] 
-                          : selectedJob.tags.filter(t => t !== "Static Line");
-                        setSelectedJob({ ...selectedJob, tags: newTags });
-                      }}
-                      className="accent-emerald-500 h-4 w-4 bg-slate-900 border-slate-800 rounded"
-                    />
-                    <span>Static Line Test cert</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white">
-                    <input 
-                      type="checkbox"
-                      checked={selectedJob.tags.includes("Load Tester")}
-                      onChange={(e) => {
-                        const newTags = e.target.checked 
-                          ? [...selectedJob.tags, "Load Tester"] 
-                          : selectedJob.tags.filter(t => t !== "Load Tester");
-                        setSelectedJob({ ...selectedJob, tags: newTags });
-                      }}
-                      className="accent-emerald-500 h-4 w-4 bg-slate-900 border-slate-800 rounded"
-                    />
-                    <span>Load Tester Required</span>
-                  </label>
-                </div>
-              </div>
-
+              <button
+                type="button"
+                onClick={loadMockExcelSheet}
+                className="text-[11px] text-teal-400 hover:text-teal-300 underline"
+              >
+                Load sample spreadsheet data
+              </button>
             </div>
 
-            {/* Modal Actions */}
-            <div className="bg-slate-950 p-4 border-t border-slate-800 flex justify-between gap-2">
-              <button 
+            <div className="bg-slate-950 p-4 border-t border-slate-800 flex justify-end gap-2">
+              <button
                 type="button"
-                onClick={() => deleteJob(selectedJob.id, selectedJob.status === "scheduled")}
-                className="px-3 py-2 bg-rose-950/40 hover:bg-rose-950 border border-rose-900 text-rose-400 hover:text-rose-200 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1"
+                onClick={() => { setShowImportModal(false); setImportFeedback(""); }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-semibold rounded-lg"
               >
-                <Trash2 className="h-3.5 w-3.5" />
-                <span>Delete Entry</span>
+                Cancel
               </button>
-
-              <div className="flex gap-2">
-                {selectedJob.status === "scheduled" && (
-                  <button 
-                    type="button"
-                    onClick={() => unscheduleJob(selectedJob.id)}
-                    className="px-3 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-semibold rounded-lg transition-colors"
-                  >
-                    Send to Backlog
-                  </button>
-                )}
-                <button 
-                  type="button"
-                  onClick={() => handleSaveJobEdit(selectedJob)}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition-colors"
-                >
-                  Save Changes
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleImportCSV}
+                className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold rounded-lg transition-all flex items-center gap-2"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Import Jobs
+              </button>
             </div>
           </div>
         </div>
@@ -1348,6 +1238,7 @@ export default function App() {
         selectedJob={selectedJob}
         setSelectedJob={setSelectedJob}
         TICKETS={TICKETS}
+        RUN_STYLES={RUN_STYLES}
         onDelete={deleteJob}
         onUnschedule={unscheduleJob}
         onSaveEdit={handleSaveJobEdit}
@@ -1371,6 +1262,7 @@ export default function App() {
         showModal={showAIOptimizeModal}
         setShowModal={setShowAIOptimizeModal}
         optimizedSchedule={optimizedSchedule}
+        skippedJobs={skippedJobs}
         crews={crews}
         TICKETS={TICKETS}
         onApply={applyOptimization}
@@ -1380,7 +1272,7 @@ export default function App() {
       <footer className="bg-slate-950 border-t border-slate-800 px-6 py-3 text-xs text-slate-400 flex flex-col md:flex-row justify-between items-center gap-2">
         <div className="flex items-center gap-2 text-[11px]">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span>Automatic database validation active. Crews & Tickets registry is persistent.</span>
+          <span>Automatic safety validation active. Schedule data saved to browser storage.</span>
         </div>
         <div className="text-[11px] text-slate-500 text-center md:text-right">
           SafeMaster Heights Control System &copy; {new Date().getFullYear()}

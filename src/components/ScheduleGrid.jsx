@@ -1,6 +1,14 @@
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
 
+function getISOWeekNumber(date = new Date()) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
 export default function ScheduleGrid({
   days,
   crews,
@@ -14,6 +22,8 @@ export default function ScheduleGrid({
   getDayTotalCost,
   getRunStyle
 }) {
+  const weekNumber = getISOWeekNumber();
+
   return (
     <section className="flex-1 flex flex-col overflow-x-auto min-w-[900px] bg-slate-900">
       <div className="bg-slate-950 px-6 py-2.5 border-b border-slate-800 flex justify-between items-center text-xs text-slate-400">
@@ -42,7 +52,7 @@ export default function ScheduleGrid({
               <div className="p-3 bg-slate-950 border-b border-slate-800 sticky top-0 z-10 flex flex-col justify-between h-20">
                 <div className="flex items-center justify-between">
                   <h3 className="font-bold text-white text-xs">{day.toUpperCase()}</h3>
-                  <span className="text-[9px] font-mono text-slate-400">WEEK 27</span>
+                  <span className="text-[9px] font-mono text-slate-400">WEEK {weekNumber}</span>
                 </div>
 
                 <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-900">

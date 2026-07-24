@@ -137,7 +137,10 @@ export const CreateJobModal = ({
             <label className="text-xs text-slate-400 font-medium uppercase tracking-wider block mb-1">Mandated License Required</label>
             <select 
               value={newJob.requiredTicket}
-              onChange={(e) => setNewJob({ ...newJob, requiredTicket: e.target.value })}
+              onChange={(e) => {
+                const ticket = e.target.value;
+                setNewJob({ ...newJob, requiredTicket: ticket, ewpRequired: ticket === "EWP" });
+              }}
               className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
             >
               {Object.values(TICKETS).map(t => (
@@ -161,7 +164,14 @@ export const CreateJobModal = ({
             <input 
               type="checkbox"
               checked={newJob.ewpRequired}
-              onChange={(e) => setNewJob({ ...newJob, ewpRequired: e.target.checked })}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setNewJob({
+                  ...newJob,
+                  ewpRequired: checked,
+                  requiredTicket: checked ? "EWP" : (newJob.requiredTicket === "EWP" ? "WAH" : newJob.requiredTicket)
+                });
+              }}
               className="accent-emerald-500 h-4 w-4 bg-slate-950 border-slate-800"
             />
             <span>EWP Bookings / High Access Required?</span>
@@ -192,6 +202,7 @@ export const JobDetailModal = ({
   selectedJob, 
   setSelectedJob, 
   TICKETS,
+  RUN_STYLES,
   onDelete,
   onUnschedule,
   onSaveEdit
@@ -251,7 +262,14 @@ export const JobDetailModal = ({
               <label className="text-xs text-slate-400 font-medium uppercase tracking-wider block mb-1">Required Ticket</label>
               <select 
                 value={selectedJob.requiredTicket}
-                onChange={(e) => setSelectedJob({ ...selectedJob, requiredTicket: e.target.value })}
+                onChange={(e) => {
+                  const ticket = e.target.value;
+                  setSelectedJob({
+                    ...selectedJob,
+                    requiredTicket: ticket,
+                    ewpRequired: ticket === "EWP"
+                  });
+                }}
                 className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
               >
                 {Object.values(TICKETS).map(t => (
@@ -260,6 +278,21 @@ export const JobDetailModal = ({
               </select>
             </div>
           </div>
+
+          {RUN_STYLES && (
+            <div>
+              <label className="text-xs text-slate-400 font-medium uppercase tracking-wider block mb-1">Run Assignment</label>
+              <select
+                value={selectedJob.run}
+                onChange={(e) => setSelectedJob({ ...selectedJob, run: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
+              >
+                {Object.keys(RUN_STYLES).map(run => (
+                  <option key={run} value={run}>{run}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="text-xs text-slate-400 font-medium uppercase tracking-wider block mb-1">Notes</label>
@@ -279,7 +312,14 @@ export const JobDetailModal = ({
                 <input 
                   type="checkbox"
                   checked={selectedJob.ewpRequired}
-                  onChange={(e) => setSelectedJob({ ...selectedJob, ewpRequired: e.target.checked })}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setSelectedJob({
+                      ...selectedJob,
+                      ewpRequired: checked,
+                      requiredTicket: checked ? "EWP" : (selectedJob.requiredTicket === "EWP" ? "WAH" : selectedJob.requiredTicket)
+                    });
+                  }}
                   className="accent-emerald-500 h-4 w-4 bg-slate-900 border-slate-800 rounded"
                 />
                 <span>EWP Access Needed</span>
