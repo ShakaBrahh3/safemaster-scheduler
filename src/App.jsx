@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useSchedulerApi } from './hooks/useSchedulerApi';
+import { useRouteDirections, formatDuration, formatDistance } from './hooks/useRouteDirections';
 import { 
   Calendar, 
   Users, 
@@ -362,6 +363,16 @@ export default function App() {
   const [mainView, setMainView] = useState("schedule"); // "schedule" | "map"
   const [mapFilterCrew, setMapFilterCrew] = useState("all");
   const [mapFilterDay, setMapFilterDay] = useState("Monday");
+
+  // Driving directions for selected crew/day route
+  const routeWaypoints = mapFilterCrew !== "all"
+    ? schedule
+        .filter(j => j.crewId === mapFilterCrew && j.day === mapFilterDay && j.lat && j.lng)
+        .map(j => ({ lat: j.lat, lng: j.lng }))
+    : [];
+  const { routeData, loading: routeLoading, error: routeError } = useRouteDirections(
+    routeWaypoints.length >= 2 ? routeWaypoints : null
+  );
 
   // Calculate statistics
   const totalWeeklyValue = schedule.reduce((sum, job) => sum + Number(job.cost || 0), 0);
@@ -1234,6 +1245,23 @@ export default function App() {
                     {schedule.filter(j => j.crewId === mapFilterCrew && j.day === mapFilterDay && j.lat && j.lng).length} stops
                   </span>
                 )}
+                {/* Total route time badge */}
+                {mapFilterCrew !== "all" && routeLoading && (
+                  <span className="text-[10px] text-slate-400 animate-pulse flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 bg-teal-500 rounded-full animate-pulse"></span>
+                    Calculating route…
+                  </span>
+                )}
+                {mapFilterCrew !== "all" && !routeLoading && routeData && (
+                  <span className="flex items-center gap-1.5 px-2.5 py-1 bg-teal-900/60 border border-teal-700/60 rounded-full text-[11px] text-teal-300 font-bold">
+                    🚗 {formatDuration(routeData.duration)} · {formatDistance(routeData.distance)}
+                  </span>
+                )}
+                {mapFilterCrew !== "all" && !routeLoading && routeError && (
+                  <span className="text-[10px] text-amber-400">
+                    ⚠ Road route unavailable
+                  </span>
+                )}
               </div>
             </div>
 
@@ -1261,6 +1289,8 @@ export default function App() {
                     ? schedule.filter(j => j.crewId === mapFilterCrew && j.day === mapFilterDay)
                     : null
                 }
+                roadRoute={routeData}
+                routeLoading={routeLoading}
               />
             </div>
           </div>
