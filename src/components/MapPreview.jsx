@@ -123,6 +123,9 @@ const MapPreview = ({
         ? `🗺️ Stop ${stopIndex + 1}`
         : isScheduled ? '✅ Scheduled' : '📋 Backlog';
 
+      const googleMapsNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}`;
+      const appleMapsNavUrl = `https://maps.apple.com/?daddr=${job.lat},${job.lng}&dirflg=d`;
+
       const popupContent = `
         <div style="font-size: 12px; max-width: 220px;">
           <h4 style="margin: 0 0 4px 0; font-weight: bold; color: #111;">
@@ -139,6 +142,17 @@ const MapPreview = ({
           <p style="margin: 4px 0 0 0; font-size: 10px; color: #999;">
             ${job.lat.toFixed(4)}, ${job.lng.toFixed(4)}
           </p>
+          ${isOnRoute ? `
+          <div style="display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap;">
+            <a href="${googleMapsNavUrl}" target="_blank" rel="noopener noreferrer"
+              style="display: inline-block; padding: 4px 9px; background: #0f766e; color: #ffffff; border-radius: 4px; font-size: 11px; font-weight: 600; text-decoration: none;">
+              🗺 Google Maps
+            </a>
+            <a href="${appleMapsNavUrl}" target="_blank" rel="noopener noreferrer"
+              style="display: inline-block; padding: 4px 9px; background: #1d4ed8; color: #ffffff; border-radius: 4px; font-size: 11px; font-weight: 600; text-decoration: none;">
+              🍎 Apple Maps
+            </a>
+          </div>` : ''}
         </div>
       `;
 

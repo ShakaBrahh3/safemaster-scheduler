@@ -1262,6 +1262,38 @@ export default function App() {
                     ⚠ Road route unavailable
                   </span>
                 )}
+                {/* Full day route buttons */}
+                {mapFilterCrew !== "all" && (() => {
+                  const stops = schedule.filter(j => j.crewId === mapFilterCrew && j.day === mapFilterDay && j.lat && j.lng);
+                  if (stops.length < 2) return null;
+                  const origin = `${stops[0].lat},${stops[0].lng}`;
+                  const destination = `${stops[stops.length - 1].lat},${stops[stops.length - 1].lng}`;
+                  const waypoints = stops.slice(1, -1).map(j => `${j.lat},${j.lng}`).join('|');
+                  const googleUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}${waypoints ? `&waypoints=${waypoints}` : ''}`;
+                  // Apple Maps supports driving directions to a destination; multi-stop is not supported via URL,
+                  // so we open from origin to final destination with intermediate stops as the daddr parameter.
+                  const appleUrl = `https://maps.apple.com/?saddr=${origin}&daddr=${destination}&dirflg=d`;
+                  return (
+                    <>
+                      <a
+                        href={googleUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-2.5 py-1 bg-teal-700/80 hover:bg-teal-600/90 border border-teal-600 rounded-full text-[11px] text-white font-bold transition-colors"
+                      >
+                        🗺 Google Maps
+                      </a>
+                      <a
+                        href={appleUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-700/80 hover:bg-blue-600/90 border border-blue-600 rounded-full text-[11px] text-white font-bold transition-colors"
+                      >
+                        🍎 Apple Maps
+                      </a>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 
