@@ -2,9 +2,11 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
-# Copy package configurations and install dependencies
+# Copy package configurations
 COPY package*.json ./
-RUN npm install
+
+# Clean cache and run a strict clean install using package-lock.json
+RUN npm cache clean --force && npm ci
 
 # Copy all project files and build
 COPY . .
