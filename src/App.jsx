@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { usePersistedState } from './hooks/usePersistedState';
+import { useSchedulerApi } from './hooks/useSchedulerApi';
 import { 
   Calendar, 
   Users, 
@@ -301,9 +301,11 @@ const RUN_STYLES = {
 };
 
 export default function App() {
-  const [backlog, setBacklog] = usePersistedState('safemaster-backlog', INITIAL_BACKLOG);
-  const [schedule, setSchedule] = usePersistedState('safemaster-schedule', INITIAL_SCHEDULE);
-  const [crews, setCrews] = usePersistedState('safemaster-crews', INITIAL_CREWS);
+  const { backlog, schedule, crews, loading, error, api } = useSchedulerApi(
+    INITIAL_BACKLOG,
+    INITIAL_SCHEDULE,
+    INITIAL_CREWS
+  );
   
   const [selectedJob, setSelectedJob] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -380,7 +382,7 @@ export default function App() {
       ...newCrew,
       color: crewColors[colorIndex]
     };
-    setCrews([...crews, createdCrew]);
+    api.addCrew(createdCrew);
     setNewCrew({ name: "", email: "", phone: "", baseLocation: "", notes: "", tickets: ["WAH"] });
     setShowCrewModal(false);
     alert(`${newCrew.name} added successfully!`);
@@ -400,7 +402,9 @@ export default function App() {
       alert("Please fill in name and email");
       return;
     }
-    setCrews(crews.map(c => c.id === editingCrewId ? { ...newCrew, id: c.id, color: c.color } : c));
+    const existingCrew = crews.find(c => c.id === editingCrewId);
+    const updatedCrew = { ...newCrew, id: editingCrewId, color: existingCrew?.color ?? newCrew.color };
+    api.updateCrew(updatedCrew);
     setNewCrew({ name: "", email: "", phone: "", baseLocation: "", notes: "", tickets: ["WAH"] });
     setEditingCrewId(null);
     setShowCrewModal(false);
@@ -409,17 +413,8 @@ export default function App() {
 
   const handleDeleteCrew = (crewId) => {
     if (confirm("Are you sure? This will unassign all their scheduled jobs and return them to the backlog.")) {
-      const jobsToUnassign = schedule
-        .filter(j => j.crewId === crewId)
-        .map(job => {
-          const updated = { ...job, status: "backlog" };
-          delete updated.day;
-          delete updated.crewId;
-          return updated;
-        });
-      setBacklog([...backlog, ...jobsToUnassign]);
-      setSchedule(schedule.filter(j => j.crewId !== crewId));
-      setCrews(crews.filter(c => c.id !== crewId));
+      api.unscheduleCrewJobs(crewId);
+      api.removeCrew(crewId);
       alert("Crew removed. Their jobs have been returned to the backlog.");
     }
   };
@@ -481,8 +476,7 @@ export default function App() {
 
   const applyOptimization = () => {
     if (optimizedSchedule) {
-      setSchedule([...schedule, ...optimizedSchedule]);
-      setBacklog(backlog.filter(j => !optimizedSchedule.find(o => o.id === j.id)));
+      api.applyBulkSchedule(optimizedSchedule);
       setShowAIOptimizeModal(false);
       setOptimizedSchedule(null);
       setSkippedJobs([]);
@@ -492,16 +486,13 @@ export default function App() {
 
   // Toggle dynamic ticket ownership for interactive demo
   const handleToggleCrewTicket = (crewId, ticketCode) => {
-    setCrews(crews.map(c => {
-      if (c.id === crewId) {
-        const hasIt = c.tickets.includes(ticketCode);
-        const updatedTickets = hasIt 
-          ? c.tickets.filter(t => t !== ticketCode)
-          : [...c.tickets, ticketCode];
-        return { ...c, tickets: updatedTickets };
-      }
-      return c;
-    }));
+    const crew = crews.find(c => c.id === crewId);
+    if (!crew) return;
+    const hasIt = crew.tickets.includes(ticketCode);
+    const updatedTickets = hasIt
+      ? crew.tickets.filter(t => t !== ticketCode)
+      : [...crew.tickets, ticketCode];
+    api.updateCrewTickets(crewId, updatedTickets);
   };
 
   // Drag and Drop Logic
@@ -531,19 +522,11 @@ export default function App() {
     }
 
     if (dragSource === "backlog") {
-      const jobIndex = backlog.findIndex(j => j.id === draggedJobId);
-      if (jobIndex !== -1) {
-        const job = { ...backlog[jobIndex], day, crewId, status: "scheduled" };
-        setSchedule([...schedule, job]);
-        setBacklog(backlog.filter(j => j.id !== draggedJobId));
+      if (backlog.find(j => j.id === draggedJobId)) {
+        api.scheduleJob(draggedJobId, day, crewId);
       }
     } else if (dragSource === "calendar") {
-      setSchedule(schedule.map(job => {
-        if (job.id === draggedJobId) {
-          return { ...job, day, crewId };
-        }
-        return job;
-      }));
+      api.reassignJob(draggedJobId, day, crewId);
     }
 
     setDraggedJobId(null);
@@ -555,13 +538,8 @@ export default function App() {
     if (!draggedJobId) return;
 
     if (dragSource === "calendar") {
-      const jobIndex = schedule.findIndex(j => j.id === draggedJobId);
-      if (jobIndex !== -1) {
-        const job = { ...schedule[jobIndex], status: "backlog" };
-        delete job.day;
-        delete job.crewId;
-        setBacklog([...backlog, job]);
-        setSchedule(schedule.filter(j => j.id !== draggedJobId));
+      if (schedule.find(j => j.id === draggedJobId)) {
+        api.unscheduleJob(draggedJobId);
       }
     }
     setDraggedJobId(null);
@@ -576,30 +554,23 @@ export default function App() {
   // Edit / Delete helpers
   const handleSaveJobEdit = (updatedJob) => {
     if (updatedJob.status === "scheduled") {
-      setSchedule(schedule.map(j => j.id === updatedJob.id ? updatedJob : j));
+      api.updateScheduledJob(updatedJob);
     } else {
-      setBacklog(backlog.map(j => j.id === updatedJob.id ? updatedJob : j));
+      api.updateBacklogJob(updatedJob);
     }
     setSelectedJob(null);
   };
 
   const unscheduleJob = (jobId) => {
-    const job = schedule.find(j => j.id === jobId);
-    if (job) {
-      const updated = { ...job, status: "backlog" };
-      delete updated.day;
-      delete updated.crewId;
-      setBacklog([...backlog, updated]);
-      setSchedule(schedule.filter(j => j.id !== jobId));
-    }
+    api.unscheduleJob(jobId);
     setSelectedJob(null);
   };
 
   const deleteJob = (jobId, isScheduled) => {
     if (isScheduled) {
-      setSchedule(schedule.filter(j => j.id !== jobId));
+      api.removeFromSchedule(jobId);
     } else {
-      setBacklog(backlog.filter(j => j.id !== jobId));
+      api.removeFromBacklog(jobId);
     }
     setSelectedJob(null);
   };
@@ -647,7 +618,7 @@ export default function App() {
     });
 
     if (newJobsParsed.length > 0) {
-      setBacklog([...newJobsParsed, ...backlog]);
+      api.importJobs(newJobsParsed);
       setImportFeedback(`Successfully imported ${addedCount} height safety tasks!`);
       setCsvInput("");
       setTimeout(() => {
@@ -685,7 +656,7 @@ export default function App() {
       tags: newJob.ewpRequired ? ["EWP Hire", ...newJob.tags] : newJob.tags
     };
 
-    setBacklog([formattedJob, ...backlog]);
+    api.addJobToBacklog(formattedJob);
     setShowCreateModal(false);
     setNewJob({
       site: "",
@@ -758,6 +729,50 @@ export default function App() {
   const getRunStyle = (runName) => {
     return RUN_STYLES[runName] || { bg: "bg-gray-100 text-gray-800 border-gray-300", dot: "bg-gray-500" };
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center flex-col gap-4">
+        <div className="p-3 bg-gradient-to-br from-teal-500 to-emerald-600 rounded-xl shadow-md">
+          <ShieldAlert className="h-8 w-8 text-slate-950 stroke-[2.5]" />
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-semibold text-slate-300">Loading SafeMaster Scheduler…</p>
+          <p className="text-xs text-slate-500 mt-1">Connecting to database</p>
+        </div>
+        <div className="w-32 h-1 bg-slate-800 rounded-full overflow-hidden">
+          <div className="h-full bg-teal-500 rounded-full animate-pulse w-2/3"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center flex-col gap-4 p-6">
+        <div className="p-3 bg-rose-600 rounded-xl shadow-md">
+          <AlertTriangle className="h-8 w-8 text-white stroke-[2.5]" />
+        </div>
+        <div className="text-center max-w-md">
+          <p className="text-base font-bold text-rose-400 mb-1">Database connection failed</p>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            SafeMaster Scheduler could not reach its database. Your data has not been loaded and
+            changes cannot be saved. Please check that the API server is running and the database
+            is reachable, then reload the page.
+          </p>
+          <pre className="mt-3 text-[10px] bg-slate-800 text-rose-300 rounded-lg p-3 text-left overflow-auto max-h-28">
+            {error}
+          </pre>
+        </div>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-sm font-semibold text-slate-200 transition-all"
+        >
+          Reload page
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans selection:bg-teal-500 selection:text-slate-900">
