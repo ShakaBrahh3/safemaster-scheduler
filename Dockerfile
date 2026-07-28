@@ -2,21 +2,21 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
-# Copy package configurations
-COPY package*.json ./
+# Ensure devDependencies are included
+ENV NODE_ENV=development
 
-# Clean cache and run a strict clean install using package-lock.json
-RUN npm cache clean --force && npm ci
-
-# Copy all project files and build
+# 1. Copy source code and package files FIRST
 COPY . .
-RUN npm run build
+
+# 2. Run npm install AFTER files are copied
+RUN npm install
+
+# 3. Build the Vite app using the local binary directly
+RUN npx vite build
 
 # Stage 2: Serve the application using Nginx
 FROM nginx:alpine
-# Copy custom Nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-# Copy static assets from build stage
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80
