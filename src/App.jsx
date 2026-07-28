@@ -10,6 +10,7 @@ import {
   Filter, 
   AlertTriangle, 
   MapPin, 
+  Map,
   DollarSign, 
   Sliders, 
   Trash2, 
@@ -36,6 +37,7 @@ import { CrewManagementModal } from './components/CrewComponents';
 import { CreateJobModal, JobDetailModal } from './components/JobModals';
 import { RouteOptimizationModal } from './components/RouteOptimizationModal';
 import ScheduleGrid from './components/ScheduleGrid';
+import MapPreview from './components/MapPreview';
 
 // STANDARD TICKET DEFINITIONS
 const TICKETS = {
@@ -353,6 +355,11 @@ export default function App() {
   const [showAIOptimizeModal, setShowAIOptimizeModal] = useState(false);
   const [optimizedSchedule, setOptimizedSchedule] = useState(null);
   const [skippedJobs, setSkippedJobs] = useState([]);
+
+  // Map view state
+  const [mainView, setMainView] = useState("schedule"); // "schedule" | "map"
+  const [mapFilterCrew, setMapFilterCrew] = useState("all");
+  const [mapFilterDay, setMapFilterDay] = useState("Monday");
 
   // Calculate statistics
   const totalWeeklyValue = schedule.reduce((sum, job) => sum + Number(job.cost || 0), 0);
@@ -809,7 +816,24 @@ export default function App() {
         </div>
 
         {/* ACTIONS */}
-        <div className="flex gap-2 justify-end self-end lg:self-center">
+        <div className="flex gap-2 justify-end self-end lg:self-center flex-wrap">
+          {/* Map / Schedule toggle */}
+          <div className="flex rounded-lg overflow-hidden border border-slate-700 shadow">
+            <button
+              onClick={() => setMainView("schedule")}
+              className={`px-3 py-2 text-sm font-semibold flex items-center gap-1.5 transition-all ${mainView === "schedule" ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-400 hover:text-slate-200"}`}
+            >
+              <Calendar className="h-4 w-4" />
+              <span className="hidden sm:inline">Schedule</span>
+            </button>
+            <button
+              onClick={() => setMainView("map")}
+              className={`px-3 py-2 text-sm font-semibold flex items-center gap-1.5 transition-all ${mainView === "map" ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-400 hover:text-slate-200"}`}
+            >
+              <Map className="h-4 w-4" />
+              <span className="hidden sm:inline">Map View</span>
+            </button>
+          </div>
           <button 
             onClick={() => setShowImportModal(true)}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-sm font-semibold rounded-lg text-slate-200 transition-all flex items-center gap-2 shadow"
@@ -1138,19 +1162,94 @@ export default function App() {
 
         </section>
 
-        <ScheduleGrid
-          days={DAYS}
-          crews={crews}
-          schedule={schedule}
-          TICKETS={TICKETS}
-          onSelectJob={(job) => setSelectedJob(job)}
-          onDragStart={handleDragStart}
-          onDragOver={handleDragOver}
-          onDropOnCell={handleDropOnCell}
-          checkTicketConflict={checkTicketConflict}
-          getDayTotalCost={getDayTotalCost}
-          getRunStyle={getRunStyle}
-        />
+        {mainView === "schedule" ? (
+          <ScheduleGrid
+            days={DAYS}
+            crews={crews}
+            schedule={schedule}
+            TICKETS={TICKETS}
+            onSelectJob={(job) => setSelectedJob(job)}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDropOnCell={handleDropOnCell}
+            checkTicketConflict={checkTicketConflict}
+            getDayTotalCost={getDayTotalCost}
+            getRunStyle={getRunStyle}
+          />
+        ) : (
+          /* MAP VIEW */
+          <div className="flex-1 flex flex-col overflow-hidden bg-slate-950 min-w-0">
+            {/* Map controls bar */}
+            <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 border-b border-slate-800 bg-slate-900/60 shrink-0">
+              <div className="flex items-center gap-2">
+                <Map className="h-4 w-4 text-teal-400" />
+                <span className="text-xs font-bold text-white uppercase tracking-wider">
+                  Site Map
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  — {[...backlog, ...schedule].filter(j => j.lat && j.lng).length} sites with coordinates
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 ml-auto flex-wrap">
+                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Show route for:</span>
+                <select
+                  value={mapFilterCrew}
+                  onChange={e => setMapFilterCrew(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 text-xs text-slate-200 rounded px-2 py-1 focus:outline-none focus:border-teal-500"
+                >
+                  <option value="all">All Crews</option>
+                  {crews.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                {mapFilterCrew !== "all" && (
+                  <select
+                    value={mapFilterDay}
+                    onChange={e => setMapFilterDay(e.target.value)}
+                    className="bg-slate-900 border border-slate-700 text-xs text-slate-200 rounded px-2 py-1 focus:outline-none focus:border-teal-500"
+                  >
+                    {DAYS.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                )}
+                {mapFilterCrew !== "all" && (
+                  <span className="text-[10px] text-teal-400 font-semibold">
+                    {schedule.filter(j => j.crewId === mapFilterCrew && j.day === mapFilterDay && j.lat && j.lng).length} stops
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Legend */}
+            <div className="flex flex-wrap gap-3 px-4 py-2 border-b border-slate-800/60 bg-slate-950/60 text-[10px] text-slate-400 shrink-0">
+              <span className="font-semibold text-slate-300">Ticket:</span>
+              {[['WAH','bg-blue-500'],['EWP','bg-cyan-500'],['ROPE','bg-purple-500'],['CSE','bg-amber-500']].map(([label, cls]) => (
+                <span key={label} className="flex items-center gap-1">
+                  <span className={`w-2.5 h-2.5 rounded-full ${cls}`}></span>{label}
+                </span>
+              ))}
+              <span className="ml-3 font-semibold text-slate-300">Status:</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>Scheduled (full colour)</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 opacity-50"></span>Backlog (faded)</span>
+              {mapFilterCrew !== "all" && <span className="flex items-center gap-1"><span className="border border-white w-2.5 h-2.5 rounded-full bg-teal-500"></span>On route (teal line)</span>}
+            </div>
+
+            <div className="flex-1 min-h-0 p-3">
+              <MapPreview
+                jobs={[...backlog, ...schedule]}
+                height="100%"
+                onJobClick={(job) => setSelectedJob(job)}
+                routeJobs={
+                  mapFilterCrew !== "all"
+                    ? schedule.filter(j => j.crewId === mapFilterCrew && j.day === mapFilterDay)
+                    : null
+                }
+              />
+            </div>
+          </div>
+        )}
 
       </main>
 

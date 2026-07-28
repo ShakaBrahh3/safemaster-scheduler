@@ -21,10 +21,11 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-const MapPreview = ({ jobs = [], onJobClick = null, height = "300px", showSatellite = false, onToggleSatellite = null }) => {
+const MapPreview = ({ jobs = [], onJobClick = null, height = "300px", showSatellite = false, onToggleSatellite = null, routeJobs = null }) => {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const markers = useRef([]);
+  const routeLine = useRef(null);
   const [layerMode, setLayerMode] = useState(showSatellite ? 'satellite' : 'street');
 
   useEffect(() => {
@@ -79,34 +80,37 @@ const MapPreview = ({ jobs = [], onJobClick = null, height = "300px", showSatell
     markers.current.forEach(marker => map.current.removeLayer(marker));
     markers.current = [];
 
+    if (routeLine.current) {
+      map.current.removeLayer(routeLine.current);
+      routeLine.current = null;
+    }
+
     const jobsWithLocation = jobs.filter(j => j.lat && j.lng);
-    if (jobsWithLocation.length === 0) return;
 
     jobsWithLocation.forEach((job) => {
-      const marker = L.marker([job.lat, job.lng]).addTo(map.current);
+      const isScheduled = job.status === 'scheduled';
+      const isOnRoute = routeJobs && routeJobs.some(r => r.id === job.id);
+
+      const statusLabel = isOnRoute ? '🗺️ On Route' : isScheduled ? '✅ Scheduled' : '📋 Backlog';
 
       const popupContent = `
-        <div style="font-size: 12px; max-width: 200px;">
-          <h4 style="margin: 0 0 4px 0; font-weight: bold; color: #333;">
+        <div style="font-size: 12px; max-width: 220px;">
+          <h4 style="margin: 0 0 4px 0; font-weight: bold; color: #111;">
             ${escapeHtml(job.site)}
           </h4>
-          <p style="margin: 2px 0; color: #666;">
+          <p style="margin: 2px 0; color: #555; font-size: 11px;">${statusLabel}</p>
+          <p style="margin: 2px 0; color: #444;">
             💰 $${Number(job.cost || 0).toFixed(2)}
           </p>
-          <p style="margin: 2px 0; color: #666;">
+          <p style="margin: 2px 0; color: #444;">
             🏷️ ${escapeHtml(job.requiredTicket || 'WAH')}
           </p>
-          <p style="margin: 2px 0; font-size: 11px; color: #999;">
+          ${job.run ? `<p style="margin: 2px 0; color: #666; font-size: 11px;">📍 ${escapeHtml(job.run)}</p>` : ''}
+          <p style="margin: 4px 0 0 0; font-size: 10px; color: #999;">
             ${job.lat.toFixed(4)}, ${job.lng.toFixed(4)}
           </p>
         </div>
       `;
-
-      marker.bindPopup(popupContent);
-
-      if (onJobClick) {
-        marker.on('click', () => onJobClick(job));
-      }
 
       const colors = {
         'WAH': '#3b82f6',
@@ -115,27 +119,54 @@ const MapPreview = ({ jobs = [], onJobClick = null, height = "300px", showSatell
         'CSE': '#f59e0b',
       };
 
-      const color = colors[job.requiredTicket] || '#64748b';
+      // Scheduled jobs get a filled circle; backlog gets a lighter ring appearance
+      const baseColor = colors[job.requiredTicket] || '#64748b';
+      const fillColor = isScheduled ? baseColor : baseColor;
+      const opacity = isScheduled ? '1' : '0.5';
+      const stroke = isOnRoute ? '%23ffffff' : 'none';
+      const strokeW = isOnRoute ? '2' : '0';
+
       const icon = L.icon({
-        iconUrl: `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='${encodeURIComponent(color)}'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z'/%3E%3C/svg%3E`,
-        iconSize: [32, 32],
-        iconAnchor: [16, 32],
-        popupAnchor: [0, -32],
+        iconUrl: `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='${encodeURIComponent(fillColor)}' fill-opacity='${opacity}' stroke='${stroke}' stroke-width='${strokeW}'/%3E%3C/svg%3E`,
+        iconSize: [isOnRoute ? 26 : 20, isOnRoute ? 26 : 20],
+        iconAnchor: [isOnRoute ? 13 : 10, isOnRoute ? 13 : 10],
+        popupAnchor: [0, isOnRoute ? -14 : -11],
       });
 
-      marker.setIcon(icon);
+      const marker = L.marker([job.lat, job.lng], { icon }).addTo(map.current);
+      marker.bindPopup(popupContent);
+
+      if (onJobClick) {
+        marker.on('click', () => onJobClick(job));
+      }
+
       markers.current.push(marker);
     });
 
-    const group = L.featureGroup(markers.current);
-    map.current.fitBounds(group.getBounds().pad(0.1));
-  }, [jobs, onJobClick]);
+    // Draw route polyline
+    if (routeJobs && routeJobs.length > 1) {
+      const points = routeJobs.filter(j => j.lat && j.lng).map(j => [j.lat, j.lng]);
+      if (points.length > 1) {
+        routeLine.current = L.polyline(points, {
+          color: '#14b8a6',
+          weight: 3,
+          opacity: 0.85,
+          dashArray: '10 5',
+        }).addTo(map.current);
+      }
+    }
+
+    if (markers.current.length > 0) {
+      const group = L.featureGroup(markers.current);
+      map.current.fitBounds(group.getBounds().pad(0.15));
+    }
+  }, [jobs, routeJobs, onJobClick]);
 
   return (
-    <div className="relative w-full rounded-lg overflow-hidden border border-slate-700 shadow-lg">
+    <div className="relative w-full rounded-lg overflow-hidden border border-slate-700 shadow-lg" style={{ height }}>
       <div
         ref={mapContainer}
-        style={{ height }}
+        style={{ height: '100%' }}
         className="bg-slate-800 w-full"
       />
       
