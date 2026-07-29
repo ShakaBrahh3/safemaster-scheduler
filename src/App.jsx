@@ -311,6 +311,12 @@ export default function App() {
   const [selectedJob, setSelectedJob] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRunFilter, setSelectedRunFilter] = useState("ALL");
+  const [priorityFilter, setPriorityFilter] = useState("ALL");
+  const [showOnlyUnqualified, setShowOnlyUnqualified] = useState(false);
+  const [selectedBacklogIds, setSelectedBacklogIds] = useState([]);
+  const [bulkTargetDay, setBulkTargetDay] = useState("Monday");
+  const [bulkTargetCrewId, setBulkTargetCrewId] = useState("");
+  const [bulkFeedback, setBulkFeedback] = useState("");
   const [draggedJobId, setDraggedJobId] = useState(null);
   const [dragSource, setDragSource] = useState(null); 
   
@@ -364,6 +370,12 @@ export default function App() {
   const [mapFilterCrew, setMapFilterCrew] = useState("all");
   const [mapFilterDay, setMapFilterDay] = useState("Monday");
 
+  React.useEffect(() => {
+    if (!bulkTargetCrewId && crews.length > 0) {
+      setBulkTargetCrewId(crews[0].id);
+    }
+  }, [bulkTargetCrewId, crews]);
+
   // Driving directions for selected crew/day route
   const routeWaypoints = mapFilterCrew !== "all"
     ? schedule
@@ -379,6 +391,11 @@ export default function App() {
   const backlogValue = backlog.reduce((sum, job) => sum + Number(job.cost || 0), 0);
   const totalScheduledJobs = schedule.length;
   const totalEwpJobs = schedule.filter(j => j.ewpRequired).length;
+  const openBacklogJobs = backlog.filter(job => job.status === 'backlog').length;
+  const highPriorityBacklog = backlog.filter(job => job.priority === 'high').length;
+  const unqualifiedBacklog = backlog.filter(job => !crews.some(crew => crew.tickets.includes(job.requiredTicket))).length;
+  const dayBriefingJobs = schedule.filter(job => job.day === briefingDay);
+  const dayBriefingValue = dayBriefingJobs.reduce((sum, job) => sum + Number(job.cost || 0), 0);
 
   // Crew Management Handlers
   const handleAddCrew = () => {
@@ -722,13 +739,17 @@ export default function App() {
     }
   };
 
+  const hasQualifiedCrew = (job) => crews.some(crew => crew.tickets.includes(job.requiredTicket));
+
   // Filters backlog items
   const filteredBacklog = backlog.filter(job => {
     const matchesSearch = job.site.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           job.notes.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           job.run.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesRun = selectedRunFilter === "ALL" || job.run === selectedRunFilter;
-    return matchesSearch && matchesRun;
+    const matchesPriority = priorityFilter === "ALL" || job.priority === priorityFilter;
+    const matchesQualification = !showOnlyUnqualified || !hasQualifiedCrew(job);
+    return matchesSearch && matchesRun && matchesPriority && matchesQualification;
   });
 
   const getDayTotalCost = (day) => {
@@ -739,6 +760,107 @@ export default function App() {
 
   const getRunStyle = (runName) => {
     return RUN_STYLES[runName] || { bg: "bg-gray-100 text-gray-800 border-gray-300", dot: "bg-gray-500" };
+  };
+
+  const escapeCsvValue = (value) => {
+    const stringValue = value == null ? '' : String(value);
+    return /[",\n]/.test(stringValue) ? `"${stringValue.replace(/"/g, '""')}"` : stringValue;
+  };
+
+  const downloadCsv = (filename, rows) => {
+    if (!rows.length) return;
+    const headers = Object.keys(rows[0]);
+    const csvContent = [headers.join(','), ...rows.map(row => headers.map(header => escapeCsvValue(row[header])).join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportBacklogCsv = () => {
+    const rows = backlog.map(job => ({
+      id: job.id,
+      site: job.site,
+      cost: job.cost,
+      run: job.run,
+      priority: job.priority,
+      requiredTicket: job.requiredTicket,
+      ewpRequired: job.ewpRequired ? 'yes' : 'no',
+      notes: job.notes,
+      tags: (job.tags || []).join('|'),
+      lat: job.lat ?? '',
+      lng: job.lng ?? '',
+      status: job.status
+    }));
+    downloadCsv(`safemaster-backlog-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+  };
+
+  const handleExportScheduleCsv = () => {
+    const rows = schedule.map(job => ({
+      id: job.id,
+      site: job.site,
+      cost: job.cost,
+      day: job.day || '',
+      crewId: job.crewId || '',
+      run: job.run,
+      priority: job.priority,
+      requiredTicket: job.requiredTicket,
+      ewpRequired: job.ewpRequired ? 'yes' : 'no',
+      notes: job.notes,
+      tags: (job.tags || []).join('|'),
+      lat: job.lat ?? '',
+      lng: job.lng ?? '',
+      status: job.status
+    }));
+    downloadCsv(`safemaster-schedule-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+  };
+
+  const handleToggleBacklogSelection = (jobId) => {
+    setSelectedBacklogIds(prev => prev.includes(jobId) ? prev.filter(id => id !== jobId) : [...prev, jobId]);
+  };
+
+  const handleSelectVisibleBacklog = () => {
+    setSelectedBacklogIds(filteredBacklog.map(job => job.id));
+    setBulkFeedback(`Selected ${filteredBacklog.length} visible backlog items.`);
+  };
+
+  const handleClearBacklogSelection = () => {
+    setSelectedBacklogIds([]);
+    setBulkFeedback('Selection cleared.');
+  };
+
+  const handleBulkAssignBacklog = async () => {
+    if (selectedBacklogIds.length === 0) {
+      setBulkFeedback('Select at least one backlog item to assign.');
+      return;
+    }
+
+    const targetCrew = crews.find(crew => crew.id === bulkTargetCrewId);
+    if (!targetCrew) {
+      setBulkFeedback('Choose a valid crew before bulk assigning.');
+      return;
+    }
+
+    const selectedJobs = backlog.filter(job => selectedBacklogIds.includes(job.id));
+    let assignedCount = 0;
+    let skippedCount = 0;
+
+    for (const job of selectedJobs) {
+      if (checkTicketConflict(job, bulkTargetCrewId)) {
+        skippedCount += 1;
+        continue;
+      }
+      await api.scheduleJob(job.id, bulkTargetDay, bulkTargetCrewId);
+      assignedCount += 1;
+    }
+
+    setSelectedBacklogIds([]);
+    setBulkFeedback(`${assignedCount} jobs assigned to ${targetCrew.name} on ${bulkTargetDay}. ${skippedCount} skipped due to ticket mismatch.`);
   };
 
   if (loading) {
@@ -796,6 +918,7 @@ export default function App() {
         </div>
         <div className="hidden md:flex items-center gap-4 text-white/90">
           <span>Active Crews: {crews.length}</span>
+          <span>Auto-save: local browser cache + live API sync</span>
           <span>Safety Code Compliance: Standard WA 2026</span>
         </div>
       </div>
@@ -861,6 +984,20 @@ export default function App() {
             </button>
           </div>
           <button 
+            onClick={handleExportScheduleCsv}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-sm font-semibold rounded-lg text-slate-200 transition-all flex items-center gap-2 shadow"
+          >
+            <Download className="h-4 w-4" />
+            <span>Export Schedule</span>
+          </button>
+          <button 
+            onClick={handleExportBacklogCsv}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-sm font-semibold rounded-lg text-slate-200 transition-all flex items-center gap-2 shadow"
+          >
+            <Download className="h-4 w-4" />
+            <span>Export Backlog</span>
+          </button>
+          <button 
             onClick={() => setShowImportModal(true)}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-sm font-semibold rounded-lg text-slate-200 transition-all flex items-center gap-2 shadow"
           >
@@ -876,6 +1013,39 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      <div className="border-b border-slate-800 bg-slate-950/70 px-4 py-3">
+        <div className="grid gap-3 lg:grid-cols-4">
+          <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+            <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Planning focus</p>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-lg font-semibold text-white">{openBacklogJobs}</span>
+              <span className="text-xs text-slate-400">open jobs</span>
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+            <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Critical backlog</p>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-lg font-semibold text-rose-400">{highPriorityBacklog}</span>
+              <span className="text-xs text-slate-400">high priority</span>
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+            <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Needs qualified crew</p>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-lg font-semibold text-amber-400">{unqualifiedBacklog}</span>
+              <span className="text-xs text-slate-400">items flagged</span>
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+            <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">{briefingDay} briefing</p>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-lg font-semibold text-emerald-400">{dayBriefingJobs.length}</span>
+              <span className="text-xs text-slate-400">jobs • ${dayBriefingValue.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* MAIN CONTAINER */}
       <main className="flex-1 flex flex-col xl:flex-row overflow-hidden">
@@ -914,9 +1084,103 @@ export default function App() {
           {/* TAB CONTENT: 1. JOBS BACKLOG */}
           {leftActiveTab === "backlog" && (
             <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="p-4 border-b border-slate-900 bg-slate-950/50">
+              <div className="p-4 border-b border-slate-900 bg-slate-950/50 space-y-3">
+                <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Bulk scheduling</p>
+                    <span className="text-[10px] text-slate-500">{selectedBacklogIds.length} selected</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={bulkTargetDay}
+                      onChange={(e) => setBulkTargetDay(e.target.value)}
+                      className="bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-200"
+                    >
+                      {DAYS.map(day => <option key={day} value={day}>{day}</option>)}
+                    </select>
+                    <select
+                      value={bulkTargetCrewId}
+                      onChange={(e) => setBulkTargetCrewId(e.target.value)}
+                      className="bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-200"
+                    >
+                      {crews.map(crew => <option key={crew.id} value={crew.id}>{crew.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSelectVisibleBacklog}
+                      className="px-2.5 py-1.5 rounded border border-slate-700 bg-slate-800 text-[10px] font-semibold text-slate-200"
+                    >
+                      Select visible
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleClearBacklogSelection}
+                      className="px-2.5 py-1.5 rounded border border-slate-700 bg-slate-900 text-[10px] font-semibold text-slate-400"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleBulkAssignBacklog}
+                      className="px-2.5 py-1.5 rounded bg-teal-600 text-[10px] font-semibold text-slate-950"
+                    >
+                      Assign selected
+                    </button>
+                  </div>
+                  {bulkFeedback && (
+                    <p className="text-[10px] text-slate-400">{bulkFeedback}</p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-2.5">
+                    <p className="text-[9px] uppercase tracking-[0.24em] text-slate-400">Open jobs</p>
+                    <p className="text-sm font-semibold text-white">{backlog.length}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-2.5">
+                    <p className="text-[9px] uppercase tracking-[0.24em] text-slate-400">Filtered view</p>
+                    <p className="text-sm font-semibold text-teal-400">{filteredBacklog.length}</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-1">
+                  {['ALL', 'high', 'warning', 'normal'].map(level => (
+                    <button
+                      key={level}
+                      onClick={() => setPriorityFilter(level)}
+                      className={`text-[9px] px-2 py-1 rounded font-bold transition-all ${priorityFilter === level ? 'bg-teal-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:bg-slate-750'}`}
+                    >
+                      {level === 'ALL' ? 'ALL PRIORITY' : level.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowOnlyUnqualified(prev => !prev)}
+                    className={`text-[10px] px-2.5 py-1.5 rounded border font-semibold transition-all ${showOnlyUnqualified ? 'bg-amber-500/10 text-amber-300 border-amber-500/30' : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'}`}
+                  >
+                    {showOnlyUnqualified ? 'Showing unqualified only' : 'Show unqualified only'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedRunFilter('ALL');
+                      setPriorityFilter('ALL');
+                      setShowOnlyUnqualified(false);
+                      setSearchQuery('');
+                    }}
+                    className="text-[10px] px-2.5 py-1.5 rounded border border-slate-800 bg-slate-900 text-slate-400 hover:text-slate-200 transition-all"
+                  >
+                    Reset
+                  </button>
+                </div>
+
                 {/* Run Filtering badges */}
-                <div className="flex flex-wrap gap-1 mb-3">
+                <div className="flex flex-wrap gap-1">
                   <button 
                     onClick={() => setSelectedRunFilter("ALL")}
                     className={`text-[9px] px-2 py-1 rounded font-bold transition-all ${selectedRunFilter === "ALL" ? "bg-slate-100 text-slate-950 font-semibold" : "bg-slate-800 text-slate-400 hover:bg-slate-750"}`}
@@ -933,7 +1197,7 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-
+ 
                 {/* Search Bar */}
                 <div className="relative">
                   <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
@@ -968,6 +1232,18 @@ export default function App() {
                       className="group relative bg-slate-900 border-l-4 hover:bg-slate-850 p-3.5 rounded-r-lg rounded-l shadow transition-all cursor-grab active:cursor-grabbing border-slate-700 hover:border-teal-500"
                     >
                       <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <label
+                          className="flex items-center gap-1.5 text-[10px] text-slate-400"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedBacklogIds.includes(job.id)}
+                            onChange={() => handleToggleBacklogSelection(job.id)}
+                            className="accent-teal-500"
+                          />
+                          <span>Select</span>
+                        </label>
                         <span className={`text-[8px] uppercase px-1.5 py-0.5 rounded font-extrabold ${getRunStyle(job.run).bg}`}>
                           {job.run}
                         </span>
@@ -994,6 +1270,12 @@ export default function App() {
                         {job.ewpRequired && (
                           <span className="text-[9px] bg-cyan-950 text-cyan-400 px-1.5 py-0.5 rounded font-bold border border-cyan-800">
                             EWP
+                          </span>
+                        )}
+
+                        {!hasQualifiedCrew(job) && (
+                          <span className="text-[9px] bg-amber-950 text-amber-300 px-1.5 py-0.5 rounded font-bold border border-amber-900">
+                            No qualified crew
                           </span>
                         )}
 
