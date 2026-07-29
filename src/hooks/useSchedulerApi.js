@@ -1,21 +1,63 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
+const STORAGE_KEY = 'safemaster-scheduler-state-v1';
+
+function readPersistedState() {
+  if (typeof window === 'undefined') return null;
+  try {
+   const raw = window.localStorage.getItem(STORAGE_KEY);
+   return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+   console.warn('Unable to read scheduler persistence', error);
+   return null;
+  }
+}
+
 /**
  * Fetches all scheduler data from the API and seeds defaults if empty.
  * Returns { backlog, schedule, crews, loading, error, api }
  * where `api` exposes granular mutation helpers.
  */
 export function useSchedulerApi(initialBacklog, initialSchedule, initialCrews) {
-  const [backlog, setBacklogState] = useState([]);
-  const [schedule, setScheduleState] = useState([]);
-  const [crews, setCrewsState] = useState([]);
+  const [backlog, setBacklogState] = useState(() => {
+    const persisted = readPersistedState();
+    return persisted?.backlog ?? [];
+  });
+  const [schedule, setScheduleState] = useState(() => {
+    const persisted = readPersistedState();
+    return persisted?.schedule ?? [];
+  });
+  const [crews, setCrewsState] = useState(() => {
+    const persisted = readPersistedState();
+    return persisted?.crews ?? [];
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const seeded = useRef(false);
 
+  const writePersistedState = useCallback((nextBacklog, nextSchedule, nextCrews) => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        backlog: nextBacklog,
+        schedule: nextSchedule,
+        crews: nextCrews,
+        savedAt: new Date().toISOString(),
+      }));
+    } catch (error) {
+      console.warn('Unable to persist scheduler state', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    writePersistedState(backlog, schedule, crews);
+  }, [backlog, schedule, crews, loading, writePersistedState]);
+
   // ── Initial load ───────────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
+      const persisted = readPersistedState();
       try {
         const [jobsRes, schedRes, crewsRes] = await Promise.all([
           fetch('/api/jobs'),
@@ -23,6 +65,13 @@ export function useSchedulerApi(initialBacklog, initialSchedule, initialCrews) {
           fetch('/api/crews'),
         ]);
         if (!jobsRes.ok || !schedRes.ok || !crewsRes.ok) {
+          if (persisted) {
+            setBacklogState(persisted.backlog ?? []);
+            setScheduleState(persisted.schedule ?? []);
+            setCrewsState(persisted.crews ?? []);
+            setError(null);
+            return;
+          }
           throw new Error('API fetch failed');
         }
         const [jobs, sched, crewList] = await Promise.all([
@@ -61,10 +110,14 @@ export function useSchedulerApi(initialBacklog, initialSchedule, initialCrews) {
         }
       } catch (err) {
         console.error('API load failed:', err);
-        // Surface the error; do NOT silently fall back to in-memory defaults,
-        // as that would mask a real persistence failure and give users the false
-        // impression their changes are being saved.
-        setError(err.message);
+        if (persisted) {
+          setBacklogState(persisted.backlog ?? []);
+          setScheduleState(persisted.schedule ?? []);
+          setCrewsState(persisted.crews ?? []);
+          setError(null);
+        } else {
+          setError(err.message);
+        }
       } finally {
         setLoading(false);
       }
