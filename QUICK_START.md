@@ -1,5 +1,30 @@
 # Quick Reference: New Features
 
+## 🖥️ Local Development
+
+1. Start a local Postgres database:
+   ```
+   docker compose -f docker-compose.dev.yml up -d
+   ```
+2. Copy the env template and adjust if needed:
+   ```
+   cp .env.example .env
+   ```
+3. Install dependencies and run the frontend + API together:
+   ```
+   npm install
+   npm run dev:full
+   ```
+4. Open http://localhost:5000. The API runs on port 3001 and is proxied via `/api` (see `vite.config.js`).
+
+### Production (Docker)
+```
+docker compose up --build
+```
+Builds and runs three containers — `postgres`, `api` (Express), and `safemaster-scheduler` (Nginx + built frontend) — exposed on http://localhost:8080, with Nginx proxying `/api` to the `api` container.
+
+---
+
 ## 🧑‍💼 Crew Management
 
 ### Add a New Inspector

@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import pg from 'pg';
@@ -11,9 +12,19 @@ const { Pool } = pg;
 const app = express();
 const port = 3001;
 
+function needsSsl(connectionString) {
+  if (!connectionString) return false;
+  try {
+    const { hostname } = new URL(connectionString);
+    return !['localhost', '127.0.0.1', 'postgres'].includes(hostname);
+  } catch {
+    return false;
+  }
+}
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false }
+  ssl: needsSsl(process.env.DATABASE_URL) ? { rejectUnauthorized: false } : false
 });
 
 // ── Schema init ──────────────────────────────────────────────────────────────

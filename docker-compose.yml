@@ -1,6 +1,26 @@
-version: '3.8'
-
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: safemaster_db
+    restart: always
+    environment:
+      - POSTGRES_DB=safemaster
+      - POSTGRES_USER=safemaster
+      - POSTGRES_PASSWORD=safemaster
+    volumes:
+      - safemaster_pgdata:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: safemaster_api
+    restart: always
+    environment:
+      - DATABASE_URL=postgres://safemaster:safemaster@postgres:5432/safemaster
+    depends_on:
+      - postgres
+
   safemaster-scheduler:
     build: .
     container_name: safemaster_app
@@ -9,3 +29,8 @@ services:
     restart: always
     environment:
       - NODE_ENV=production
+    depends_on:
+      - api
+
+volumes:
+  safemaster_pgdata:

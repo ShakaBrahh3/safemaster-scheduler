@@ -1,0 +1,20 @@
+# Local development database only.
+# Usage: docker compose -f docker-compose.dev.yml up -d
+# Then run `npm run dev:full` with a matching DATABASE_URL in .env.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: safemaster_dev_db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=safemaster
+      - POSTGRES_USER=safemaster
+      - POSTGRES_PASSWORD=safemaster
+    ports:
+      - "5432:5432"
+    volumes:
+      - safemaster_dev_pgdata:/var/lib/postgresql/data
+
+volumes:
+  safemaster_dev_pgdata:
