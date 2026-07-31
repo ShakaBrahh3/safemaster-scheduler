@@ -793,15 +793,14 @@ export default function App() {
           onCreateJob={handleCreateJob}
         />
 
-        <JobDetailModal
-          job={selectedJob}
-          onClose={() => setSelectedJob(null)}
-          onSave={handleSaveJobEdit}
-          onUnschedule={unscheduleJob}
-          onDelete={deleteJob}
-          crews={crews}
+<JobDetailModal
+          selectedJob={selectedJob}
+          setSelectedJob={setSelectedJob}
           TICKETS={TICKETS}
           RUN_STYLES={RUN_STYLES}
+          onDelete={deleteJob}
+          onUnschedule={unscheduleJob}
+          onSaveEdit={handleSaveJobEdit}
         />
 
         <RouteOptimizationModal
