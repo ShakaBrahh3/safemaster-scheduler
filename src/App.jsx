@@ -740,18 +740,18 @@ export default function App() {
           {/* Main View Area (Schedule or Map) */}
           <div className="flex-1 flex flex-col overflow-hidden xl:col-span-2">
             {mainView === "schedule" ? (
-              <ScheduleGrid
-                schedule={schedule}
+<ScheduleGrid
+                days={DAYS}
                 crews={crews}
-                draggedJobId={draggedJobId}
-                dragSource={dragSource}
-                onDropOnCell={handleDropOnCell}
+                schedule={schedule}
+                TICKETS={TICKETS}
+                onSelectJob={setSelectedJob}
+                onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
-                onJobClick={setSelectedJob}
+                onDropOnCell={handleDropOnCell}
+                checkTicketConflict={(job, crewId) => checkTicketConflict(job, crewId, crews)}
                 getDayTotalCost={getDayTotalCost}
                 getRunStyle={getRunStyle}
-                TICKETS={TICKETS}
-                DAYS={DAYS}
               />
             ) : (
               <MapPreview
