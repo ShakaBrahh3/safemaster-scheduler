@@ -85,7 +85,7 @@ export const ExportModal = ({
   };
 
   // Handle export
-  const handleExport = () => {
+  const handleExport = async () => {
     const filteredJobs = getFilteredJobs();
     
     if (filteredJobs.length === 0) {
@@ -108,7 +108,7 @@ export const ExportModal = ({
           exportToJSON(filteredJobs);
           break;
         case 'email':
-          exportToEmail(filteredJobs);
+          await exportToEmail(filteredJobs);
           break;
         default:
           exportToCSV(filteredJobs);
