@@ -54,7 +54,7 @@ const matchesRecurringPattern = (date, recurring) => {
       return true; // Every day matches
     
     case 'weekly':
-      const dayIndex = date.getDay(); // 0=Sunday, 1=Monday, etc.
+      const dayIndex = (date.getDay() + 6) % 7;
       const dayValue = DAYS_OF_WEEK[dayIndex]?.value;
       return recurring.daysOfWeek.includes(dayValue);
     
