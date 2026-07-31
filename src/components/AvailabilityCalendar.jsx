@@ -106,7 +106,7 @@ export const AvailabilityCalendar = ({
   // Get availability for a crew on a specific day
   const getAvailability = (crewId, date) => {
     const crew = crews.find(c => c.id === crewId);
-    if (!crew) return AVAILABILITY_STATUS.AVAILABLE;
+    if (!crew) return AVAILABILITY_STATUS.AVAILABLE.value;
     
     // Check if crew has custom availability for this day
     if (crew.availability && crew.availability[date.toISOString().split('T')[0]]) {
@@ -120,7 +120,13 @@ export const AvailabilityCalendar = ({
     );
     
     // Default to available if no jobs
-    return hasJobs ? AVAILABILITY_STATUS.BUSY : AVAILABILITY_STATUS.AVAILABLE;
+    return hasJobs ? AVAILABILITY_STATUS.BUSY.value : AVAILABILITY_STATUS.AVAILABLE.value;
+  };
+
+  const getAvailabilityStatus = (availabilityValue) => {
+    return Object.values(AVAILABILITY_STATUS).find(
+      (status) => status.value === availabilityValue
+    );
   };
 
   // Get jobs for a crew on a specific day
@@ -283,6 +289,7 @@ export const AvailabilityCalendar = ({
           {calendarData.map((dayInfo, index) => {
             const crew = crews.find(c => c.id === selectedCrew);
             const availability = getAvailability(selectedCrew, dayInfo.date);
+            const availabilityStatus = getAvailabilityStatus(availability);
             const jobs = getJobsForDay(selectedCrew, dayInfo.date);
             const isSelected = selectedDay?.toDateString() === dayInfo.date.toDateString();
             
@@ -324,10 +331,10 @@ export const AvailabilityCalendar = ({
                   {dayInfo.isCurrentMonth && (
                     <span
                       className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                        AVAILABILITY_STATUS[availability]?.color || 'bg-slate-700'
-                      } ${AVAILABILITY_STATUS[availability]?.text || 'text-white'}`}
+                      availabilityStatus?.color || 'bg-slate-700'
+                    } ${availabilityStatus?.text || 'text-white'}`}
                     >
-                      {AVAILABILITY_STATUS[availability]?.label || 'Unknown'}
+                    {availabilityStatus?.label || 'Unknown'}
                     </span>
                   )}
                 </div>
@@ -447,13 +454,18 @@ export const AvailabilityCalendar = ({
 
             <div>
               <p className="text-xs text-slate-400 mb-1">Availability</p>
+              {(() => {
+                const availabilityStatus = getAvailabilityStatus(getAvailability(selectedCrew, selectedDay));
+                return (
               <span
                 className={`text-xs font-medium px-2 py-1 rounded-full ${
-                  AVAILABILITY_STATUS[getAvailability(selectedCrew, selectedDay)]?.color || 'bg-slate-700'
-                } ${AVAILABILITY_STATUS[getAvailability(selectedCrew, selectedDay)]?.text || 'text-white'}`}
+                  availabilityStatus?.color || 'bg-slate-700'
+                } ${availabilityStatus?.text || 'text-white'}`}
               >
-                {AVAILABILITY_STATUS[getAvailability(selectedCrew, selectedDay)]?.label || 'Unknown'}
+                {availabilityStatus?.label || 'Unknown'}
               </span>
+                );
+              })()}
             </div>
           </div>
         </div>
