@@ -320,3 +320,5 @@ export const INITIAL_CREWS = [
 export const getTicketName = (ticketCode) => TICKETS[ticketCode]?.name || ticketCode;
 export const getTicketColor = (ticketCode) => TICKETS[ticketCode]?.color || 'bg-slate-700 text-slate-300';
 export const getRunStyle = (runName) => RUN_STYLES[runName] || { bg: "bg-gray-100 text-gray-800 border-gray-300", dot: "bg-gray-500" };
+// Re-export recurring constants
+export * from './recurring';
