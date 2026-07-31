@@ -783,14 +783,14 @@ export default function App() {
           onSaveEditCrew={handleSaveEditCrew}
         />
 
-        <CreateJobModal
+<CreateJobModal
           showModal={showCreateModal}
           setShowModal={setShowCreateModal}
-          job={newJob}
-          setJob={setNewJob}
-          onSubmit={handleCreateJob}
+          newJob={newJob}
+          setNewJob={setNewJob}
           TICKETS={TICKETS}
           RUN_STYLES={RUN_STYLES}
+          onCreateJob={handleCreateJob}
         />
 
         <JobDetailModal
