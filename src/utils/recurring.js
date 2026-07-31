@@ -58,15 +58,16 @@ const matchesRecurringPattern = (date, recurring) => {
       const dayValue = DAYS_OF_WEEK[dayIndex]?.value;
       return recurring.daysOfWeek.includes(dayValue);
     
-    case 'biweekly':
-      const dayIndex = date.getDay();
-      const dayValue = DAYS_OF_WEEK[dayIndex]?.value;
-      if (!recurring.daysOfWeek.includes(dayValue)) return false;
+    case 'biweekly': {
+      const biweekDayIndex = date.getDay();
+      const biweekDayValue = DAYS_OF_WEEK[biweekDayIndex]?.value;
+      if (!recurring.daysOfWeek.includes(biweekDayValue)) return false;
       
       // Check if it's the correct week (every 2 weeks)
-      const startDate = new Date(recurring.startDate || date);
-      const weekDiff = getWeekDifference(startDate, date);
-      return weekDiff % 2 === 0;
+      const biweekStartDate = new Date(recurring.startDate || date);
+      const biweekWeekDiff = getWeekDifference(biweekStartDate, date);
+      return biweekWeekDiff % 2 === 0;
+    }
     
     case 'monthly':
       return matchesMonthlyPattern(date, recurring);

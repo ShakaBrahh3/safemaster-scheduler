@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Calendar, Clock, User, Check, X } from 'lucide-react';
-import { DAYS, DAYS_OF_WEEK, AVAILABILITY_STATUS } from '../constants/recurring';
+import { DAYS as DAYS, DAYS_OF_WEEK, AVAILABILITY_STATUS } from '../constants/recurring';
 
 /**
  * Availability calendar component for managing crew availability

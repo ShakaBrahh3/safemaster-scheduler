@@ -141,3 +141,4 @@ export const CALENDAR_COLORS = [
   'bg-lime-500', 'bg-yellow-500', 'bg-amber-500', 'bg-orange-500',
   'bg-rose-500', 'bg-pink-500', 'bg-purple-500', 'bg-violet-500'
 ];
+export { DAYS } from '../constants';

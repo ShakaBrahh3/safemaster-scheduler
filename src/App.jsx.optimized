@@ -30,15 +30,7 @@ import {
   Copy,
   UserCheck,
   ShieldCheck,
-  Sparkles,
-  Repeat,
-  Mail,
-  Share2,
-  Tag,
-  User,
-  Settings,
-  Template,
-  List
+  Sparkles
 } from 'lucide-react';
 
 // Import constants
@@ -50,9 +42,7 @@ import {
   INITIAL_BACKLOG,
   INITIAL_SCHEDULE,
   INITIAL_CREWS,
-  MAX_DAILY_LOAD,
-  RECURRING_FREQUENCY,
-  AVAILABILITY_STATUS
+  MAX_DAILY_LOAD
 } from './constants';
 
 // Import utility functions
@@ -71,20 +61,7 @@ import {
   copyToClipboard,
   debounce,
   sortByPriority,
-  generateId,
-  generateRecurringJobs,
-  formatRecurringDescription,
-  isRecurringJob,
-  getParentJobId,
-  generateICalContent,
-  checkConflict,
-  generateJobId,
-  formatTime,
-  timeToMinutes,
-  minutesToTime,
-  calculateDuration,
-  formatDuration,
-  getAvailableTimeSlots
+  generateId
 } from './utils';
 
 // Import components
@@ -102,14 +79,6 @@ import { CreateJobModal, JobDetailModal } from './components/JobModals';
 import { RouteOptimizationModal } from './components/RouteOptimizationModal';
 import ScheduleGrid from './components/ScheduleGrid';
 import MapPreview from './components/MapPreview';
-
-// Import new feature components
-import { RecurringJobModal } from './components/RecurringJobModal';
-import { TimeSlotSelector } from './components/TimeSlotSelector';
-import { AvailabilityCalendar } from './components/AvailabilityCalendar';
-import { ReminderSettings } from './components/ReminderSettings';
-import { JobTemplateModal } from './components/JobTemplateModal';
-import { ExportModal } from './components/ExportModal';
 
 // Main App Component
 export default function App() {
@@ -149,10 +118,7 @@ export default function App() {
     requiredTicket: "WAH",
     priority: "normal",
     lat: null,
-    lng: null,
-    startTime: '09:00',
-    endTime: '17:00',
-    duration: 480
+    lng: null
   });
   const [showCrewModal, setShowCrewModal] = useState(false);
   const [editingCrewId, setEditingCrewId] = useState(null);
@@ -162,9 +128,7 @@ export default function App() {
     phone: "",
     baseLocation: "",
     notes: "",
-    tickets: ["WAH"],
-    workingHours: { start: '08:00', end: '17:00' },
-    availability: {}
+    tickets: ["WAH"]
   });
   const [showAIOptimizeModal, setShowAIOptimizeModal] = useState(false);
   const [optimizedSchedule, setOptimizedSchedule] = useState(null);
@@ -173,40 +137,12 @@ export default function App() {
   const [mapFilterCrew, setMapFilterCrew] = useState("all");
   const [mapFilterDay, setMapFilterDay] = useState("Monday");
 
-  // New feature states
-  const [showRecurringModal, setShowRecurringModal] = useState(false);
-  const [showTimeSlotModal, setShowTimeSlotModal] = useState(false);
-  const [showAvailabilityCalendar, setShowAvailabilityCalendar] = useState(false);
-  const [showReminderModal, setShowReminderModal] = useState(false);
-  const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [selectedCrewForTime, setSelectedCrewForTime] = useState(null);
-  const [jobTemplates, setJobTemplates] = useState([]);
-
-  // Initialize
+  // Initialize bulk target crew
   useEffect(() => {
     if (!bulkTargetCrewId && crews.length > 0) {
       setBulkTargetCrewId(crews[0].id);
     }
-    
-    // Load templates from localStorage
-    const savedTemplates = localStorage.getItem('safemaster-templates');
-    if (savedTemplates) {
-      try {
-        setJobTemplates(JSON.parse(savedTemplates));
-      } catch (e) {
-        console.error('Error loading templates:', e);
-      }
-    }
   }, [bulkTargetCrewId, crews]);
-
-  // Save templates to localStorage
-  useEffect(() => {
-    if (jobTemplates.length > 0) {
-      localStorage.setItem('safemaster-templates', JSON.stringify(jobTemplates));
-    }
-  }, [jobTemplates]);
 
   // Driving directions for selected crew/day route
   const routeWaypoints = mapFilterCrew !== "all"
@@ -268,12 +204,10 @@ export default function App() {
     const createdCrew = {
       id: newCrewId,
       ...newCrew,
-      color: CREW_COLORS[colorIndex],
-      workingHours: newCrew.workingHours || { start: '08:00', end: '17:00' },
-      availability: newCrew.availability || {}
+      color: CREW_COLORS[colorIndex]
     };
     api.addCrew(createdCrew);
-    setNewCrew({ name: "", email: "", phone: "", baseLocation: "", notes: "", tickets: ["WAH"], workingHours: { start: '08:00', end: '17:00' }, availability: {} });
+    setNewCrew({ name: "", email: "", phone: "", baseLocation: "", notes: "", tickets: ["WAH"] });
     setShowCrewModal(false);
     alert(`${newCrew.name} added successfully!`);
   }, [newCrew, crews.length, api]);
@@ -281,11 +215,7 @@ export default function App() {
   const handleEditCrew = useCallback((crewId) => {
     const crew = crews.find(c => c.id === crewId);
     if (crew) {
-      setNewCrew({ 
-        ...crew,
-        workingHours: crew.workingHours || { start: '08:00', end: '17:00' },
-        availability: crew.availability || {}
-      });
+      setNewCrew({ ...crew });
       setEditingCrewId(crewId);
       setShowCrewModal(true);
     }
@@ -297,15 +227,9 @@ export default function App() {
       return;
     }
     const existingCrew = crews.find(c => c.id === editingCrewId);
-    const updatedCrew = { 
-      ...newCrew, 
-      id: editingCrewId, 
-      color: existingCrew?.color ?? newCrew.color,
-      workingHours: newCrew.workingHours || existingCrew?.workingHours || { start: '08:00', end: '17:00' },
-      availability: newCrew.availability || existingCrew?.availability || {}
-    };
+    const updatedCrew = { ...newCrew, id: editingCrewId, color: existingCrew?.color ?? newCrew.color };
     api.updateCrew(updatedCrew);
-    setNewCrew({ name: "", email: "", phone: "", baseLocation: "", notes: "", tickets: ["WAH"], workingHours: { start: '08:00', end: '17:00' }, availability: {} });
+    setNewCrew({ name: "", email: "", phone: "", baseLocation: "", notes: "", tickets: ["WAH"] });
     setEditingCrewId(null);
     setShowCrewModal(false);
     alert("Crew updated successfully!");
@@ -490,6 +414,7 @@ export default function App() {
         const run = parts[2]?.trim().toUpperCase() || "PROGRAMMED";
         const notes = parts[3]?.trim() || "Routine height compliance.";
         
+        // Auto detect ticket needs based on text
         let requiredTicket = "WAH";
         if (notes.toLowerCase().includes("rope") || notes.toLowerCase().includes("descent")) requiredTicket = "ROPE";
         else if (notes.toLowerCase().includes("ewp") || notes.toLowerCase().includes("elevating")) requiredTicket = "EWP";
@@ -505,10 +430,7 @@ export default function App() {
           ewpRequired: requiredTicket === "EWP",
           requiredTicket,
           priority: notes.toLowerCase().includes("urgent") ? "high" : "normal",
-          status: "backlog",
-          startTime: '09:00',
-          endTime: '17:00',
-          duration: 480
+          status: "backlog"
         });
         addedCount++;
       }
@@ -598,10 +520,7 @@ export default function App() {
       tags: (job.tags || []).join('|'),
       lat: job.lat ?? '',
       lng: job.lng ?? '',
-      status: job.status,
-      startTime: job.startTime || '',
-      endTime: job.endTime || '',
-      duration: job.duration || ''
+      status: job.status
     }));
     downloadCsv(`safemaster-schedule-${new Date().toISOString().slice(0, 10)}.csv`, rows);
   }, [schedule]);
@@ -673,140 +592,9 @@ export default function App() {
       tags: [],
       ewpRequired: false,
       requiredTicket: "WAH",
-      priority: "normal",
-      startTime: '09:00',
-      endTime: '17:00',
-      duration: 480
+      priority: "normal"
     });
   }, [newJob, api]);
-
-  // New feature handlers
-  const handleOpenRecurringModal = useCallback((job = null) => {
-    setNewJob(job || {
-      site: "",
-      cost: "",
-      run: "SOUTHWEST RUN",
-      notes: "",
-      tags: [],
-      ewpRequired: false,
-      requiredTicket: "WAH",
-      priority: "normal",
-      startTime: '09:00',
-      endTime: '17:00',
-      duration: 480
-    });
-    setShowRecurringModal(true);
-  }, []);
-
-  const handleSaveRecurringJob = useCallback((jobWithRecurring) => {
-    if (jobWithRecurring.recurring) {
-      // Generate recurring instances
-      const instances = generateRecurringJobs(jobWithRecurring);
-      // For now, just save the first instance with recurring info
-      // In production, you'd save all instances
-      const jobToSave = {
-        ...jobWithRecurring,
-        id: jobWithRecurring.id || generateJobId('job'),
-        isRecurring: true,
-        parentJobId: jobWithRecurring.id
-      };
-      api.addJobToBacklog(jobToSave);
-      alert(`Recurring job saved! ${instances.length} instances would be generated.`);
-    } else {
-      api.addJobToBacklog(jobWithRecurring);
-    }
-    setShowRecurringModal(false);
-    setNewJob({
-      site: "",
-      cost: "",
-      run: "SOUTHWEST RUN",
-      notes: "",
-      tags: [],
-      ewpRequired: false,
-      requiredTicket: "WAH",
-      priority: "normal",
-      startTime: '09:00',
-      endTime: '17:00',
-      duration: 480
-    });
-  }, [api]);
-
-  const handleOpenTimeSlotModal = useCallback((crew, date) => {
-    setSelectedCrewForTime(crew);
-    setSelectedDate(date);
-    setShowTimeSlotModal(true);
-  }, []);
-
-  const handleTimeSelect = useCallback((time) => {
-    setNewJob(prev => ({ ...prev, ...time }));
-    setShowTimeSlotModal(false);
-  }, []);
-
-  const handleOpenAvailabilityCalendar = useCallback(() => {
-    setShowAvailabilityCalendar(true);
-  }, []);
-
-  const handleAvailabilityChange = useCallback((crewId, date, status) => {
-    api.updateCrew({ 
-      id: crewId,
-      availability: {
-        ...crews.find(c => c.id === crewId)?.availability,
-        [date]: status
-      }
-    });
-    alert(`Availability set to ${status} for ${crews.find(c => c.id === crewId)?.name} on ${new Date(date).toLocaleDateString()}`);
-  }, [crews, api]);
-
-  const handleOpenReminderModal = useCallback((job) => {
-    setSelectedJob(job);
-    setShowReminderModal(true);
-  }, []);
-
-  const handleSaveWithReminders = useCallback((jobWithReminders) => {
-    if (jobWithReminders.status === "scheduled") {
-      api.updateScheduledJob(jobWithReminders);
-    } else {
-      api.updateBacklogJob(jobWithReminders);
-    }
-    setSelectedJob(null);
-    setShowReminderModal(false);
-    alert('Reminders saved successfully!');
-  }, [api]);
-
-  const handleOpenTemplateModal = useCallback(() => {
-    setShowTemplateModal(true);
-  }, []);
-
-  const handleSaveTemplate = useCallback((template) => {
-    setJobTemplates(prev => {
-      const existingIndex = prev.findIndex(t => t.id === template.id);
-      if (existingIndex >= 0) {
-        const updated = [...prev];
-        updated[existingIndex] = template;
-        return updated;
-      }
-      return [...prev, template];
-    });
-    alert(`Template "${template.name}" saved successfully!`);
-  }, []);
-
-  const handleDeleteTemplate = useCallback((templateId) => {
-    setJobTemplates(prev => prev.filter(t => t.id !== templateId));
-    alert('Template deleted successfully!');
-  }, []);
-
-  const handleUseTemplate = useCallback((template) => {
-    setNewJob({
-      ...template,
-      id: undefined,
-      status: 'backlog'
-    });
-    setShowCreateModal(true);
-  }, []);
-
-  const handleOpenExportModal = useCallback(() => {
-    setShowExportModal(true);
-  }, []);
 
   // Loading state
   if (loading) {
@@ -857,7 +645,7 @@ export default function App() {
           totalEwpJobs={totalEwpJobs}
           mainView={mainView}
           setMainView={setMainView}
-          onExportSchedule={handleOpenExportModal}
+          onExportSchedule={handleExportScheduleCsv}
           onExportBacklog={handleExportBacklogCsv}
           onImport={() => setShowImportModal(true)}
           onCreateJob={() => setShowCreateModal(true)}
@@ -964,7 +752,6 @@ export default function App() {
                 getRunStyle={getRunStyle}
                 TICKETS={TICKETS}
                 DAYS={DAYS}
-                onJobDoubleClick={(job) => handleOpenReminderModal(job)}
               />
             ) : (
               <MapPreview
@@ -1004,11 +791,6 @@ export default function App() {
           onSubmit={handleCreateJob}
           TICKETS={TICKETS}
           RUN_STYLES={RUN_STYLES}
-          crews={crews}
-          onOpenRecurring={() => handleOpenRecurringModal(newJob)}
-          onOpenTimeSlot={() => handleOpenTimeSlotModal(crews[0], new Date().toISOString().split('T')[0])}
-          templates={jobTemplates}
-          onUseTemplate={handleUseTemplate}
         />
 
         <JobDetailModal
@@ -1020,7 +802,6 @@ export default function App() {
           crews={crews}
           TICKETS={TICKETS}
           RUN_STYLES={RUN_STYLES}
-          onOpenReminder={() => handleOpenReminderModal(selectedJob)}
         />
 
         <RouteOptimizationModal
@@ -1031,58 +812,6 @@ export default function App() {
           crews={crews}
           TICKETS={TICKETS}
           onApply={applyOptimization}
-        />
-
-        {/* New Feature Modals */}
-        <RecurringJobModal
-          showModal={showRecurringModal}
-          setShowModal={setShowRecurringModal}
-          job={newJob}
-          onSave={handleSaveRecurringJob}
-          crews={crews}
-          TICKETS={TICKETS}
-        />
-
-        <TimeSlotSelector
-          showModal={showTimeSlotModal}
-          setShowModal={setShowTimeSlotModal}
-          crew={selectedCrewForTime}
-          date={selectedDate}
-          existingJobs={schedule}
-          onSelect={handleTimeSelect}
-        />
-
-        <AvailabilityCalendar
-          showModal={showAvailabilityCalendar}
-          setShowModal={setShowAvailabilityCalendar}
-          crews={crews}
-          schedule={schedule}
-          onAvailabilityChange={handleAvailabilityChange}
-        />
-
-        <ReminderSettings
-          showModal={showReminderModal}
-          setShowModal={setShowReminderModal}
-          job={selectedJob}
-          onSave={handleSaveWithReminders}
-          crews={crews}
-        />
-
-        <JobTemplateModal
-          showModal={showTemplateModal}
-          setShowModal={setShowTemplateModal}
-          templates={jobTemplates}
-          onSave={handleSaveTemplate}
-          onDelete={handleDeleteTemplate}
-          crews={crews}
-        />
-
-        <ExportModal
-          showModal={showExportModal}
-          setShowModal={setShowExportModal}
-          jobs={schedule}
-          crews={crews}
-          schedule={schedule}
         />
 
         {/* Import Modal */}
