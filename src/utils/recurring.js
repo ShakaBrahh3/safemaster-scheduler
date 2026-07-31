@@ -220,7 +220,9 @@ export const formatRecurringDescription = (recurring) => {
     return 'One time';
   }
   
-  const frequency = RECURRING_FREQUENCY[recurring.frequency]?.label || recurring.frequency;
+  const frequency = recurring.frequency === 'biweekly'
+    ? 'Bi-weekly'
+    : recurring.frequency.charAt(0).toUpperCase() + recurring.frequency.slice(1);
   
   let description = `Repeats ${frequency}`;
   
