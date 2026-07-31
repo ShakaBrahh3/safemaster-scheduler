@@ -70,7 +70,6 @@ CREATE TABLE IF NOT EXISTS crews (
 );
 
 -- Optimized indexes for crew queries
-CREATE INDEX IF NOT EXISTS crews_id_idx ON crews (id);
 CREATE INDEX IF NOT EXISTS crews_name_idx ON crews (name);
 CREATE INDEX IF NOT EXISTS crews_tickets_idx ON crews USING GIN (tickets);
 CREATE INDEX IF NOT EXISTS crews_base_location_idx ON crews (base_location);

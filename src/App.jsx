@@ -225,7 +225,10 @@ export default function App() {
   const totalEwpJobs = schedule.filter(j => j.ewpRequired).length;
   const openBacklogJobs = backlog.filter(job => job.status === 'backlog').length;
   const highPriorityBacklog = backlog.filter(job => job.priority === 'high').length;
-  const unqualifiedBacklog = backlog.filter(job => !crews.some(crew => crew.tickets.includes(job.requiredTicket))).length;
+const unqualifiedBacklog = backlog.filter(job => {
+    const required = job.ewpRequired ? "EWP" : (job.requiredTicket || "WAH");
+    return !crews.some(crew => crew.tickets.includes(required));
+  }).length;
   const dayBriefingJobs = schedule.filter(job => job.day === briefingDay);
   const dayBriefingValue = calculateTotalCost(dayBriefingJobs);
 
@@ -952,14 +955,16 @@ export default function App() {
           {/* Main View Area (Schedule or Map) */}
           <div className="flex-1 flex flex-col overflow-hidden xl:col-span-2">
             {mainView === "schedule" ? (
-              <ScheduleGrid
-                schedule={schedule}
+<ScheduleGrid
+                days={DAYS}
                 crews={crews}
-                draggedJobId={draggedJobId}
-                dragSource={dragSource}
-                onDropOnCell={handleDropOnCell}
+                schedule={schedule}
+                TICKETS={TICKETS}
+                onSelectJob={setSelectedJob}
+                onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
-                onJobClick={setSelectedJob}
+                onDropOnCell={handleDropOnCell}
+                checkTicketConflict={(job, crewId) => checkTicketConflict(job, crewId, crews)}
                 getDayTotalCost={getDayTotalCost}
                 getRunStyle={getRunStyle}
                 TICKETS={TICKETS}
@@ -996,12 +1001,11 @@ export default function App() {
           onSaveEditCrew={handleSaveEditCrew}
         />
 
-        <CreateJobModal
+<CreateJobModal
           showModal={showCreateModal}
           setShowModal={setShowCreateModal}
-          job={newJob}
-          setJob={setNewJob}
-          onSubmit={handleCreateJob}
+          newJob={newJob}
+          setNewJob={setNewJob}
           TICKETS={TICKETS}
           RUN_STYLES={RUN_STYLES}
           crews={crews}
@@ -1009,18 +1013,18 @@ export default function App() {
           onOpenTimeSlot={() => handleOpenTimeSlotModal(crews[0], new Date().toISOString().split('T')[0])}
           templates={jobTemplates}
           onUseTemplate={handleUseTemplate}
+          onCreateJob={handleCreateJob}
         />
 
-        <JobDetailModal
-          job={selectedJob}
-          onClose={() => setSelectedJob(null)}
-          onSave={handleSaveJobEdit}
-          onUnschedule={unscheduleJob}
-          onDelete={deleteJob}
-          crews={crews}
+<JobDetailModal
+          selectedJob={selectedJob}
+          setSelectedJob={setSelectedJob}
           TICKETS={TICKETS}
           RUN_STYLES={RUN_STYLES}
           onOpenReminder={() => handleOpenReminderModal(selectedJob)}
+          onDelete={deleteJob}
+          onUnschedule={unscheduleJob}
+          onSaveEdit={handleSaveJobEdit}
         />
 
         <RouteOptimizationModal

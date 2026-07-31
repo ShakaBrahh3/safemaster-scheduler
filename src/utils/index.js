@@ -408,14 +408,17 @@ export const formatDate = (date, format = 'DD/MM/YYYY') => {
     'July', 'August', 'September', 'October', 'November', 'December'];
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   
-  return format
-    .replace('DD', day)
-    .replace('MM', month)
-    .replace('MMMM', monthNames[d.getMonth()])
-    .replace('YYYY', year)
-    .replace('HH', hours)
-    .replace('mm', minutes)
-    .replace('dddd', dayNames[d.getDay()]);
+const tokens = {
+    dddd: dayNames[d.getDay()],
+    MMMM: monthNames[d.getMonth()],
+    YYYY: String(year),
+    DD: day,
+    D: String(d.getDate()),
+    MM: month,
+    HH: hours,
+    mm: minutes
+  };
+  return format.replace(/dddd|MMMM|YYYY|DD|D|MM|HH|mm/g, token => tokens[token]);
 };
 
 /**
