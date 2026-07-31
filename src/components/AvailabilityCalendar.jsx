@@ -268,12 +268,12 @@ export const AvailabilityCalendar = ({
       <div className="p-4">
         {/* Day Headers */}
         <div className="grid grid-cols-7 gap-px bg-slate-800">
-          {DAYS.map(day => (
+          {DAYS_OF_WEEK.map(day => (
             <div
-              key={day}
+              key={day.value}
               className="p-2 text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider"
             >
-              {day.slice(0, 3)}
+              {day.short}
             </div>
           ))}
         </div>
