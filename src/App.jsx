@@ -161,7 +161,10 @@ export default function App() {
   const totalEwpJobs = schedule.filter(j => j.ewpRequired).length;
   const openBacklogJobs = backlog.filter(job => job.status === 'backlog').length;
   const highPriorityBacklog = backlog.filter(job => job.priority === 'high').length;
-  const unqualifiedBacklog = backlog.filter(job => !crews.some(crew => crew.tickets.includes(job.requiredTicket))).length;
+const unqualifiedBacklog = backlog.filter(job => {
+    const required = job.ewpRequired ? "EWP" : (job.requiredTicket || "WAH");
+    return !crews.some(crew => crew.tickets.includes(required));
+  }).length;
   const dayBriefingJobs = schedule.filter(job => job.day === briefingDay);
   const dayBriefingValue = calculateTotalCost(dayBriefingJobs);
 
