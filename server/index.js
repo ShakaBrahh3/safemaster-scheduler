@@ -27,9 +27,7 @@ const pool = new Pool({
   ssl: needsSsl(process.env.DATABASE_URL) ? { rejectUnauthorized: false } : false
 });
 
-// ── Schema init ──────────────────────────────────────────────────────────────
-// Runs schema.sql on every startup so the tables always exist in any
-// environment (fresh clone, new Replit fork, CI, etc.).
+// Schema init
 async function initSchema() {
   const schemaSql = readFileSync(join(__dirname, 'schema.sql'), 'utf8');
   await pool.query(schemaSql);
@@ -40,12 +38,76 @@ initSchema().catch((err) => {
   console.error('FATAL: could not initialise database schema:', err.message);
   process.exit(1);
 });
-// ─────────────────────────────────────────────────────────────────────────────
 
 app.use(cors());
 app.use(express.json());
 
-// ── JOBS ────────────────────────────────────────────────────────────────────
+// Helper functions
+function dbRowToJob(row) {
+  return {
+    id: row.id,
+    site: row.site,
+    cost: parseFloat(row.cost),
+    run: row.run,
+    notes: row.notes,
+    tags: Array.isArray(row.tags) ? row.tags : JSON.parse(row.tags || '[]'),
+    ewpRequired: row.ewp_required,
+    requiredTicket: row.required_ticket,
+    priority: row.priority,
+    status: row.status,
+    day: row.day,
+    crewId: row.crew_id,
+    lat: row.lat ? parseFloat(row.lat) : null,
+    lng: row.lng ? parseFloat(row.lng) : null,
+    startTime: row.start_time || '09:00',
+    endTime: row.end_time || '17:00',
+    duration: row.duration || 480,
+    isRecurring: row.is_recurring || false,
+    parentJobId: row.parent_job_id,
+    recurring: row.recurring ? JSON.parse(row.recurring) : null,
+    recurringInstance: row.recurring_instance,
+    reminders: row.reminders ? JSON.parse(row.reminders) : []
+  };
+}
+
+function dbRowToCrew(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    color: row.color,
+    tickets: Array.isArray(row.tickets) ? row.tickets : JSON.parse(row.tickets || '["WAH"]'),
+    baseLocation: row.base_location,
+    notes: row.notes,
+    workingHours: row.working_hours ? JSON.parse(row.working_hours) : { start: '08:00', end: '17:00' },
+    availability: row.availability ? JSON.parse(row.availability) : {}
+  };
+}
+
+function dbRowToTemplate(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    site: row.site,
+    cost: parseFloat(row.cost),
+    run: row.run,
+    notes: row.notes,
+    tags: Array.isArray(row.tags) ? row.tags : JSON.parse(row.tags || '[]'),
+    ewpRequired: row.ewp_required,
+    requiredTicket: row.required_ticket,
+    priority: row.priority,
+    startTime: row.start_time || '09:00',
+    endTime: row.end_time || '17:00',
+    duration: row.duration || 480,
+    crewId: row.crew_id,
+    isDefault: row.is_default || false,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+// JOBS API
 
 // GET all jobs (backlog)
 app.get('/api/jobs', async (req, res) => {
@@ -73,23 +135,58 @@ app.get('/api/schedule', async (req, res) => {
   }
 });
 
+// GET jobs by date range
+app.get('/api/jobs/by-date', async (req, res) => {
+  try {
+    const { startDate, endDate, crewId } = req.query;
+    let query = "SELECT * FROM jobs WHERE status = 'scheduled' ";
+    const params = [];
+    
+    if (startDate) {
+      params.push(startDate);
+      query += `AND day >= $${params.length} `;
+    }
+    if (endDate) {
+      params.push(endDate);
+      query += `AND day <= $${params.length} `;
+    }
+    if (crewId) {
+      params.push(crewId);
+      query += `AND crew_id = $${params.length} `;
+    }
+    query += "ORDER BY day, start_time ASC";
+    
+    const result = await pool.query(query, params);
+    res.json(result.rows.map(dbRowToJob));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST create a job
 app.post('/api/jobs', async (req, res) => {
   try {
     const job = req.body;
     await pool.query(
-      `INSERT INTO jobs (id, site, cost, run, notes, tags, ewp_required, required_ticket, priority, status, day, crew_id, lat, lng)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+      `INSERT INTO jobs (id, site, cost, run, notes, tags, ewp_required, required_ticket, priority, status, day, crew_id, lat, lng, start_time, end_time, duration, is_recurring, parent_job_id, recurring, recurring_instance, reminders)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
        ON CONFLICT (id) DO UPDATE SET
          site=$2, cost=$3, run=$4, notes=$5, tags=$6, ewp_required=$7,
-         required_ticket=$8, priority=$9, status=$10, day=$11, crew_id=$12, lat=$13, lng=$14`,
+         required_ticket=$8, priority=$9, status=$10, day=$11, crew_id=$12, lat=$13, lng=$14,
+         start_time=$15, end_time=$16, duration=$17, is_recurring=$18, parent_job_id=$19,
+         recurring=$20, recurring_instance=$21, reminders=$22`,
       [
         job.id, job.site, job.cost ?? 0, job.run ?? 'PROGRAMMED',
         job.notes ?? '', JSON.stringify(job.tags ?? []),
         job.ewpRequired ?? false, job.requiredTicket ?? 'WAH',
         job.priority ?? 'normal', job.status ?? 'backlog',
         job.day ?? null, job.crewId ?? null,
-        job.lat ?? null, job.lng ?? null
+        job.lat ?? null, job.lng ?? null,
+        job.startTime ?? '09:00', job.endTime ?? '17:00', job.duration ?? 480,
+        job.isRecurring ?? false, job.parentJobId ?? null,
+        JSON.stringify(job.recurring ?? null), job.recurringInstance ?? null,
+        JSON.stringify(job.reminders ?? [])
       ]
     );
     res.json({ ok: true });
@@ -106,7 +203,9 @@ app.put('/api/jobs/:id', async (req, res) => {
     await pool.query(
       `UPDATE jobs SET
          site=$2, cost=$3, run=$4, notes=$5, tags=$6, ewp_required=$7,
-         required_ticket=$8, priority=$9, status=$10, day=$11, crew_id=$12, lat=$13, lng=$14
+         required_ticket=$8, priority=$9, status=$10, day=$11, crew_id=$12, lat=$13, lng=$14,
+         start_time=$15, end_time=$16, duration=$17, is_recurring=$18, parent_job_id=$19,
+         recurring=$20, recurring_instance=$21, reminders=$22
        WHERE id=$1`,
       [
         req.params.id, job.site, job.cost ?? 0, job.run ?? 'PROGRAMMED',
@@ -114,7 +213,11 @@ app.put('/api/jobs/:id', async (req, res) => {
         job.ewpRequired ?? false, job.requiredTicket ?? 'WAH',
         job.priority ?? 'normal', job.status ?? 'backlog',
         job.day ?? null, job.crewId ?? null,
-        job.lat ?? null, job.lng ?? null
+        job.lat ?? null, job.lng ?? null,
+        job.startTime ?? '09:00', job.endTime ?? '17:00', job.duration ?? 480,
+        job.isRecurring ?? false, job.parentJobId ?? null,
+        JSON.stringify(job.recurring ?? null), job.recurringInstance ?? null,
+        JSON.stringify(job.reminders ?? [])
       ]
     );
     res.json({ ok: true });
@@ -135,7 +238,7 @@ app.delete('/api/jobs/:id', async (req, res) => {
   }
 });
 
-// Bulk-replace all jobs of a given status (used for optimistic full-sync)
+// Bulk-replace all jobs of a given status
 app.post('/api/jobs/bulk', async (req, res) => {
   try {
     const { jobs } = req.body;
@@ -144,18 +247,24 @@ app.post('/api/jobs/bulk', async (req, res) => {
     }
     for (const job of jobs) {
       await pool.query(
-        `INSERT INTO jobs (id, site, cost, run, notes, tags, ewp_required, required_ticket, priority, status, day, crew_id, lat, lng)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        `INSERT INTO jobs (id, site, cost, run, notes, tags, ewp_required, required_ticket, priority, status, day, crew_id, lat, lng, start_time, end_time, duration, is_recurring, parent_job_id, recurring, recurring_instance, reminders)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
          ON CONFLICT (id) DO UPDATE SET
            site=$2, cost=$3, run=$4, notes=$5, tags=$6, ewp_required=$7,
-           required_ticket=$8, priority=$9, status=$10, day=$11, crew_id=$12, lat=$13, lng=$14`,
+           required_ticket=$8, priority=$9, status=$10, day=$11, crew_id=$12, lat=$13, lng=$14,
+           start_time=$15, end_time=$16, duration=$17, is_recurring=$18, parent_job_id=$19,
+           recurring=$20, recurring_instance=$21, reminders=$22`,
         [
           job.id, job.site, job.cost ?? 0, job.run ?? 'PROGRAMMED',
           job.notes ?? '', JSON.stringify(job.tags ?? []),
           job.ewpRequired ?? false, job.requiredTicket ?? 'WAH',
           job.priority ?? 'normal', job.status ?? 'backlog',
           job.day ?? null, job.crewId ?? null,
-          job.lat ?? null, job.lng ?? null
+          job.lat ?? null, job.lng ?? null,
+          job.startTime ?? '09:00', job.endTime ?? '17:00', job.duration ?? 480,
+          job.isRecurring ?? false, job.parentJobId ?? null,
+          JSON.stringify(job.recurring ?? null), job.recurringInstance ?? null,
+          JSON.stringify(job.reminders ?? [])
         ]
       );
     }
@@ -166,7 +275,97 @@ app.post('/api/jobs/bulk', async (req, res) => {
   }
 });
 
-// ── CREWS ───────────────────────────────────────────────────────────────────
+// Generate recurring job instances
+app.post('/api/jobs/generate-recurring', async (req, res) => {
+  try {
+    const { parentJobId, startDate, endDate } = req.body;
+    
+    // Get the parent job
+    const parentResult = await pool.query('SELECT * FROM jobs WHERE id = $1', [parentJobId]);
+    if (parentResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Parent job not found' });
+    }
+    
+    const parentJob = dbRowToJob(parentResult.rows[0]);
+    if (!parentJob.recurring) {
+      return res.status(400).json({ error: 'Job is not recurring' });
+    }
+    
+    // Generate instances (this would be done by a scheduled job in production)
+    const instances = [];
+    const currentDate = new Date(startDate);
+    const end = new Date(endDate);
+    let instanceNumber = 0;
+    
+    while (currentDate <= end && instanceNumber < 50) {
+      // Check if this date matches the recurring pattern
+      const dayName = currentDate.toLocaleDateString('en-US', { weekday: 'long' });
+      const dayOfMonth = currentDate.getDate();
+      const month = currentDate.getMonth();
+      
+      let shouldCreate = false;
+      switch (parentJob.recurring.frequency) {
+        case 'daily':
+          shouldCreate = true;
+          break;
+        case 'weekly':
+          shouldCreate = parentJob.recurring.daysOfWeek?.includes(dayName.toLowerCase());
+          break;
+        case 'biweekly':
+          shouldCreate = parentJob.recurring.daysOfWeek?.includes(dayName.toLowerCase());
+          if (shouldCreate) {
+            const start = new Date(parentJob.recurring.startDate || startDate);
+            const weekDiff = Math.floor((currentDate - start) / (7 * 24 * 60 * 60 * 1000));
+            shouldCreate = weekDiff % 2 === 0;
+          }
+          break;
+        case 'monthly':
+          shouldCreate = dayOfMonth === parentJob.recurring.dayOfMonth;
+          break;
+        case 'yearly':
+          shouldCreate = month === (parentJob.recurring.month - 1) && dayOfMonth === parentJob.recurring.dayOfMonth;
+          break;
+      }
+      
+      if (shouldCreate) {
+        const instanceId = `${parentJobId}-instance-${instanceNumber}`;
+        instances.push({
+          id: instanceId,
+          parentJobId: parentJob.id,
+          jobData: {
+            ...parentJob,
+            id: instanceId,
+            day: dayName,
+            date: currentDate.toISOString().split('T')[0]
+          },
+          instanceDate: currentDate.toISOString().split('T')[0],
+          instanceNumber,
+          status: 'scheduled'
+        });
+        instanceNumber++;
+      }
+      
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    // Save instances
+    for (const instance of instances) {
+      await pool.query(
+        `INSERT INTO recurring_job_instances (id, parent_job_id, job_data, instance_date, instance_number, status)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (id) DO NOTHING`,
+        [instance.id, instance.parentJobId, JSON.stringify(instance.jobData), instance.instanceDate, instance.instanceNumber, instance.status]
+      );
+    }
+    
+    res.json({ ok: true, generated: instances.length, instances });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// CREWS API
 
 app.get('/api/crews', async (req, res) => {
   try {
@@ -182,14 +381,17 @@ app.post('/api/crews', async (req, res) => {
   try {
     const crew = req.body;
     await pool.query(
-      `INSERT INTO crews (id, name, email, phone, color, tickets, base_location, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      `INSERT INTO crews (id, name, email, phone, color, tickets, base_location, notes, working_hours, availability)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        ON CONFLICT (id) DO UPDATE SET
-         name=$2, email=$3, phone=$4, color=$5, tickets=$6, base_location=$7, notes=$8`,
+         name=$2, email=$3, phone=$4, color=$5, tickets=$6, base_location=$7, notes=$8,
+         working_hours=$9, availability=$10`,
       [
         crew.id, crew.name, crew.email ?? '', crew.phone ?? '',
         crew.color ?? '', JSON.stringify(crew.tickets ?? ['WAH']),
-        crew.baseLocation ?? '', crew.notes ?? ''
+        crew.baseLocation ?? '', crew.notes ?? '',
+        JSON.stringify(crew.workingHours ?? { start: '08:00', end: '17:00' }),
+        JSON.stringify(crew.availability ?? {})
       ]
     );
     res.json({ ok: true });
@@ -203,12 +405,15 @@ app.put('/api/crews/:id', async (req, res) => {
   try {
     const crew = req.body;
     await pool.query(
-      `UPDATE crews SET name=$2, email=$3, phone=$4, color=$5, tickets=$6, base_location=$7, notes=$8
+      `UPDATE crews SET name=$2, email=$3, phone=$4, color=$5, tickets=$6, base_location=$7, notes=$8,
+         working_hours=$9, availability=$10
        WHERE id=$1`,
       [
         req.params.id, crew.name, crew.email ?? '', crew.phone ?? '',
         crew.color ?? '', JSON.stringify(crew.tickets ?? ['WAH']),
-        crew.baseLocation ?? '', crew.notes ?? ''
+        crew.baseLocation ?? '', crew.notes ?? '',
+        JSON.stringify(crew.workingHours ?? { start: '08:00', end: '17:00' }),
+        JSON.stringify(crew.availability ?? {})
       ]
     );
     res.json({ ok: true });
@@ -236,13 +441,15 @@ app.post('/api/crews/bulk', async (req, res) => {
     }
     for (const crew of crews) {
       await pool.query(
-        `INSERT INTO crews (id, name, email, phone, color, tickets, base_location, notes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        `INSERT INTO crews (id, name, email, phone, color, tickets, base_location, notes, working_hours, availability)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          ON CONFLICT (id) DO NOTHING`,
         [
           crew.id, crew.name, crew.email ?? '', crew.phone ?? '',
           crew.color ?? '', JSON.stringify(crew.tickets ?? ['WAH']),
-          crew.baseLocation ?? '', crew.notes ?? ''
+          crew.baseLocation ?? '', crew.notes ?? '',
+          JSON.stringify(crew.workingHours ?? { start: '08:00', end: '17:00' }),
+          JSON.stringify(crew.availability ?? {})
         ]
       );
     }
@@ -253,43 +460,303 @@ app.post('/api/crews/bulk', async (req, res) => {
   }
 });
 
-// ── HEALTH ──────────────────────────────────────────────────────────────────
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+// Crew Availability API
+
+// GET crew availability
+app.get('/api/crews/:id/availability', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM crew_availability WHERE crew_id = $1 ORDER BY date',
+      [req.params.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// SET crew availability for a date
+app.post('/api/crews/:id/availability', async (req, res) => {
+  try {
+    const { date, status, notes } = req.body;
+    const id = `${req.params.id}-${date}`;
+    
+    await pool.query(
+      `INSERT INTO crew_availability (id, crew_id, date, status, notes)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (id) DO UPDATE SET status=$4, notes=$5`,
+      [id, req.params.id, date, status, notes || '']
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE crew availability for a date
+app.delete('/api/crews/:id/availability/:date', async (req, res) => {
+  try {
+    const id = `${req.params.id}-${req.params.date}`;
+    await pool.query('DELETE FROM crew_availability WHERE id=$1', [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Job Templates API
+
+// GET all templates
+app.get('/api/templates', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM job_templates ORDER BY created_at ASC');
+    res.json(result.rows.map(dbRowToTemplate));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET template by ID
+app.get('/api/templates/:id', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM job_templates WHERE id = $1', [req.params.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    res.json(dbRowToTemplate(result.rows[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST create a template
+app.post('/api/templates', async (req, res) => {
+  try {
+    const template = req.body;
+    await pool.query(
+      `INSERT INTO job_templates (id, name, site, cost, run, notes, tags, ewp_required, required_ticket, priority, start_time, end_time, duration, crew_id, is_default)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       ON CONFLICT (id) DO UPDATE SET
+         name=$2, site=$3, cost=$4, run=$5, notes=$6, tags=$7, ewp_required=$8,
+         required_ticket=$9, priority=$10, start_time=$11, end_time=$12, duration=$13,
+         crew_id=$14, is_default=$15`,
+      [
+        template.id, template.name, template.site ?? '', template.cost ?? 0, template.run ?? 'PROGRAMMED',
+        template.notes ?? '', JSON.stringify(template.tags ?? []),
+        template.ewpRequired ?? false, template.requiredTicket ?? 'WAH',
+        template.priority ?? 'normal', template.startTime ?? '09:00', template.endTime ?? '17:00',
+        template.duration ?? 480, template.crewId ?? null, template.isDefault ?? false
+      ]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT update a template
+app.put('/api/templates/:id', async (req, res) => {
+  try {
+    const template = req.body;
+    await pool.query(
+      `UPDATE job_templates SET name=$2, site=$3, cost=$4, run=$5, notes=$6, tags=$7, ewp_required=$8,
+         required_ticket=$9, priority=$10, start_time=$11, end_time=$12, duration=$13,
+         crew_id=$14, is_default=$15
+       WHERE id=$1`,
+      [
+        req.params.id, template.name, template.site ?? '', template.cost ?? 0, template.run ?? 'PROGRAMMED',
+        template.notes ?? '', JSON.stringify(template.tags ?? []),
+        template.ewpRequired ?? false, template.requiredTicket ?? 'WAH',
+        template.priority ?? 'normal', template.startTime ?? '09:00', template.endTime ?? '17:00',
+        template.duration ?? 480, template.crewId ?? null, template.isDefault ?? false
+      ]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE a template
+app.delete('/api/templates/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM job_templates WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reminders API
+
+// GET reminders for a job
+app.get('/api/jobs/:id/reminders', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM reminders WHERE job_id = $1 ORDER BY minutes_before ASC', [req.params.id]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST create a reminder
+app.post('/api/reminders', async (req, res) => {
+  try {
+    const reminder = req.body;
+    const id = reminder.id || `${reminder.job_id}-reminder-${Date.now()}`;
+    await pool.query(
+      `INSERT INTO reminders (id, job_id, crew_id, minutes_before, method, recipient, message)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (id) DO UPDATE SET
+         job_id=$2, crew_id=$3, minutes_before=$4, method=$5, recipient=$6, message=$7`,
+      [id, reminder.job_id, reminder.crew_id, reminder.minutes_before, reminder.method, reminder.recipient, reminder.message]
+    );
+    res.json({ ok: true, id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE a reminder
+app.delete('/api/reminders/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM reminders WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Export API
+
+// GET iCal export for jobs
+app.get('/api/export/ical', async (req, res) => {
+  try {
+    const { crewId, startDate, endDate } = req.query;
+    let query = "SELECT * FROM jobs WHERE status = 'scheduled' ";
+    const params = [];
+    
+    if (crewId) {
+      params.push(crewId);
+      query += `AND crew_id = $${params.length} `;
+    }
+    if (startDate) {
+      params.push(startDate);
+      query += `AND day >= $${params.length} `;
+    }
+    if (endDate) {
+      params.push(endDate);
+      query += `AND day <= $${params.length} `;
+    }
+    query += "ORDER BY day, start_time ASC";
+    
+    const result = await pool.query(query, params);
+    const jobs = result.rows.map(dbRowToJob);
+    const crewsResult = await pool.query('SELECT * FROM crews');
+    const crews = crewsResult.rows.map(dbRowToCrew);
+    
+    let icalContent = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//SafeMaster Scheduler//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+`;
+    
+    jobs.forEach(job => {
+      const crew = crews.find(c => c.id === job.crewId);
+      const date = job.day ? new Date(job.day) : new Date();
+      const startTime = job.startTime || '09:00';
+      const endTime = job.endTime || '17:00';
+      
+      const [startHours, startMinutes] = startTime.split(':').map(Number);
+      const [endHours, endMinutes] = endTime.split(':').map(Number);
+      
+      const startDate = new Date(date);
+      startDate.setHours(startHours, startMinutes);
+      const endDate = new Date(date);
+      endDate.setHours(endHours, endMinutes);
+      
+      const uid = `safemaster-${job.id}-${Date.now()}@safemaster.com.au`;
+      const organizer = crew ? `CN=${crew.name}:MAILTO:${crew.email}` : 'CN=SafeMaster Scheduler';
+      
+      icalContent += `BEGIN:VEVENT
+UID:${uid}
+DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').replace('\.', '')}
+DTSTART:${formatICalDate(startDate)}
+DTEND:${formatICalDate(endDate)}
+SUMMARY:${escapeICalText(job.site || 'Job')}
+DESCRIPTION:${escapeICalText(job.notes || '')}
+LOCATION:${escapeICalText(job.site || '')}
+ORGANIZER:${organizer}
+STATUS:CONFIRMED
+SEQUENCE:0
+TRANSP:OPAQUE
+CLASS:PUBLIC
+END:VEVENT
+`;
+    });
+    
+    icalContent += 'END:VCALENDAR';
+    
+    res.setHeader('Content-Type', 'text/calendar');
+    res.setHeader('Content-Disposition', 'attachment; filename="safemaster-schedule.ics"');
+    res.send(icalContent);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Helper functions for iCal export
+function formatICalDate(date) {
+  const pad = (num) => num.toString().padStart(2, '0');
+  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
+}
+
+function escapeICalText(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/[,\\n;]/g, (match) => {
+      switch (match) {
+        case ',': return '\\,';
+        case '\\': return '\\\\';
+        case ';': return '\\;';
+        case '\n': return '\\n';
+        default: return match;
+      }
+    });
+}
+
+// HEALTH
+app.get('/api/health', async (req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({
+      ok: true,
+      timestamp: new Date().toISOString(),
+      database: 'connected',
+      uptime: process.uptime()
+    });
+  } catch (err) {
+    res.status(503).json({
+      ok: false,
+      error: 'Database connection failed',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 app.listen(port, () => {
   console.log(`SafeMaster API server running on port ${port}`);
 });
-
-// ── HELPERS ─────────────────────────────────────────────────────────────────
-
-function dbRowToJob(row) {
-  return {
-    id: row.id,
-    site: row.site,
-    cost: parseFloat(row.cost),
-    run: row.run,
-    notes: row.notes,
-    tags: Array.isArray(row.tags) ? row.tags : JSON.parse(row.tags || '[]'),
-    ewpRequired: row.ewp_required,
-    requiredTicket: row.required_ticket,
-    priority: row.priority,
-    status: row.status,
-    day: row.day,
-    crewId: row.crew_id,
-    lat: row.lat ? parseFloat(row.lat) : null,
-    lng: row.lng ? parseFloat(row.lng) : null,
-  };
-}
-
-function dbRowToCrew(row) {
-  return {
-    id: row.id,
-    name: row.name,
-    email: row.email,
-    phone: row.phone,
-    color: row.color,
-    tickets: Array.isArray(row.tickets) ? row.tickets : JSON.parse(row.tickets || '["WAH"]'),
-    baseLocation: row.base_location,
-    notes: row.notes,
-  };
-}
