@@ -276,7 +276,7 @@ export const Dashboard = ({
             {Object.entries(priorityDistribution)
               .sort((a, b) => {
                 const order = { high: 0, warning: 1, normal: 2, low: 3 };
-                return (order[a[0]] || 3) - (order[b[0]] || 3);
+                return (order[a[0]] ?? 3) - (order[b[0]] ?? 3);
               })
               .map(([priority, count]) => {
                 const percentage = (count / totalJobs) * 100;
