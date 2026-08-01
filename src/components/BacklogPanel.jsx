@@ -39,6 +39,18 @@ export const BacklogPanel = ({
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="p-4 border-b border-slate-900 bg-slate-950/50 space-y-3">
+        {/* Search */}
+        <div className="relative">
+          <Search className="h-3.5 w-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by site, notes, or run..."
+            className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500"
+          />
+        </div>
+
         {/* Bulk scheduling controls */}
         <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
@@ -102,7 +114,9 @@ export const BacklogPanel = ({
         </div>
 
         {/* Priority filters */}
-        <div className="flex flex-wrap gap-1">
+        <div className="space-y-1.5">
+          <p className="text-[9px] uppercase tracking-[0.24em] text-slate-500">Priority</p>
+          <div className="flex flex-wrap gap-1">
           {['ALL', 'high', 'warning', 'normal'].map(level => (
             <button
               key={level}
@@ -112,6 +126,7 @@ export const BacklogPanel = ({
               {level === 'ALL' ? 'ALL PRIORITY' : level.toUpperCase()}
             </button>
           ))}
+          </div>
         </div>
 
         {/* Unqualified filter */}
@@ -138,7 +153,9 @@ export const BacklogPanel = ({
         </div>
 
         {/* Run filtering badges */}
-        <div className="flex flex-wrap gap-1">
+        <div className="space-y-1.5">
+          <p className="text-[9px] uppercase tracking-[0.24em] text-slate-500">Run type</p>
+          <div className="flex flex-wrap gap-1">
           <button 
             onClick={() => setSelectedRunFilter("ALL")}
             className={`text-[9px] px-2 py-1 rounded font-bold transition-all ${selectedRunFilter === "ALL" ? "bg-slate-100 text-slate-950 font-semibold" : "bg-slate-800 text-slate-400 hover:bg-slate-750"}`}
@@ -154,6 +171,7 @@ export const BacklogPanel = ({
               {run.replace(" RUN", "")}
             </button>
           ))}
+          </div>
         </div>
       </div>
 

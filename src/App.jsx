@@ -37,7 +37,6 @@ import {
   Tag,
   User,
   Settings,
-  Template,
   List
 } from 'lucide-react';
 
@@ -877,7 +876,7 @@ const unqualifiedBacklog = backlog.filter(job => {
         />
 
         {/* Main Container */}
-        <main className="flex-1 flex flex-col xl:flex-row overflow-hidden">
+        <main className="flex-1 flex flex-col xl:flex-row overflow-hidden gap-0">
           
           {/* Sidebar with Tabs */}
           <Sidebar
@@ -888,7 +887,7 @@ const unqualifiedBacklog = backlog.filter(job => {
           />
 
           {/* Tab Content */}
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex flex-col overflow-hidden border-r border-slate-800/60">
             {leftActiveTab === "backlog" && (
               <BacklogPanel
                 backlog={backlog}
@@ -953,7 +952,7 @@ const unqualifiedBacklog = backlog.filter(job => {
           </div>
 
           {/* Main View Area (Schedule or Map) */}
-          <div className="flex-1 flex flex-col overflow-hidden xl:col-span-2">
+          <div className="flex-1 flex flex-col overflow-hidden xl:col-span-2 bg-slate-900/40">
             {mainView === "schedule" ? (
 <ScheduleGrid
                 days={DAYS}
@@ -967,7 +966,6 @@ const unqualifiedBacklog = backlog.filter(job => {
                 checkTicketConflict={(job, crewId) => checkTicketConflict(job, crewId, crews)}
                 getDayTotalCost={getDayTotalCost}
                 getRunStyle={getRunStyle}
-                TICKETS={TICKETS}
                 DAYS={DAYS}
                 onJobDoubleClick={(job) => handleOpenReminderModal(job)}
               />

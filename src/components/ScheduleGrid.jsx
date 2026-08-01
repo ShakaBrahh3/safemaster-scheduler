@@ -25,11 +25,11 @@ export default function ScheduleGrid({
   const weekNumber = getISOWeekNumber();
 
   return (
-    <section className="flex-1 flex flex-col overflow-x-auto min-w-[900px] bg-slate-900">
-      <div className="bg-slate-950 px-6 py-2.5 border-b border-slate-800 flex justify-between items-center text-xs text-slate-400">
-        <div className="flex items-center gap-3">
+    <section className="flex-1 flex flex-col overflow-x-auto min-w-[900px] bg-slate-900/80">
+      <div className="bg-slate-950/90 px-4 lg:px-6 py-2.5 border-b border-slate-800 flex flex-wrap justify-between items-center gap-2 text-xs text-slate-400">
+        <div className="flex items-center gap-3 flex-wrap">
           <span className="font-bold text-slate-300 uppercase tracking-wider text-[10px]">Competency Key:</span>
-          <div className="flex gap-2 font-semibold">
+          <div className="flex gap-2 font-semibold flex-wrap">
             <span className="px-1.5 py-0.5 bg-blue-900/60 text-blue-300 border border-blue-800 rounded text-[9px]">WAH: Heights</span>
             <span className="px-1.5 py-0.5 bg-cyan-900/60 text-cyan-300 border border-cyan-800 rounded text-[9px]">EWP: Elevating Platforms</span>
             <span className="px-1.5 py-0.5 bg-purple-900/60 text-purple-300 border border-purple-800 rounded text-[9px]">ROPE: Rope Access Facades</span>
@@ -50,13 +50,13 @@ export default function ScheduleGrid({
           return (
             <div key={day} className="flex flex-col h-full bg-slate-900">
               <div className="p-3 bg-slate-950 border-b border-slate-800 sticky top-0 z-10 flex flex-col justify-between h-20">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <h3 className="font-bold text-white text-xs">{day.toUpperCase()}</h3>
                   <span className="text-[9px] font-mono text-slate-400">WEEK {weekNumber}</span>
                 </div>
 
                 <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-900">
-                  <span className="text-[10px] text-slate-400 font-medium">Daily Value</span>
+                  <span className="text-[10px] text-slate-400 font-medium">{dayJobs.length} jobs</span>
                   <span className="text-xs font-bold text-teal-400">
                     ${dayCostSum.toLocaleString('en-AU', { minimumFractionDigits: 2 })}
                   </span>

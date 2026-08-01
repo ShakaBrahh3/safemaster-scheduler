@@ -14,7 +14,7 @@ export const MetricsBar = ({
   dayBriefingValue
 }) => {
   return (
-    <div className="border-b border-slate-800 bg-slate-950/70 px-4 py-3">
+    <div className="border-b border-slate-800 bg-slate-950/70 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-slate-950/50">
       <div className="grid gap-3 lg:grid-cols-4">
         <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
           <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Planning focus</p>
@@ -41,7 +41,7 @@ export const MetricsBar = ({
           <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">{briefingDay} briefing</p>
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-lg font-semibold text-emerald-400">{dayBriefingJobs.length}</span>
-            <span className="text-xs text-slate-400">jobs  ${formatCurrencyCompact(dayBriefingValue)}</span>
+            <span className="text-xs text-slate-400">jobs • ${formatCurrencyCompact(dayBriefingValue)}</span>
           </div>
         </div>
       </div>
