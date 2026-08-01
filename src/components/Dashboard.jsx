@@ -11,7 +11,10 @@ import {
   XCircle,
   BarChart3,
   PieChart,
-  Activity
+  Activity,
+  Plus,
+  Sparkles,
+  Download
 } from 'lucide-react';
 import { formatCurrency } from '../utils';
 
