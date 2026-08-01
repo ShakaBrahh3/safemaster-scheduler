@@ -189,12 +189,14 @@ export const Dashboard = ({
                 ? Math.min((dayData.revenue / Math.max(...dailyRevenue.map(d => d.revenue), 1)) * 100, 100)
                 : 0;
               return (
-                <div key={dayData.day} className="flex-1 flex flex-col items-center gap-2">
-                  <div 
-                    className="w-full bg-slate-800 rounded-t" 
-                    style={{ height: `${height}%` }}
-                  >
-                    <div className="h-full bg-gradient-to-t from-emerald-600 to-emerald-400 rounded-t opacity-80" />
+                <div key={dayData.day} className="flex-1 h-full flex flex-col items-center gap-2">
+                  <div className="w-full flex-1 flex items-end">
+                    <div
+                      className="w-full bg-slate-800 rounded-t"
+                      style={{ height: `${height}%` }}
+                    >
+                      <div className="h-full bg-gradient-to-t from-emerald-600 to-emerald-400 rounded-t opacity-80" />
+                    </div>
                   </div>
                   <span className="text-xs text-slate-400">{dayData.day.slice(0, 3)}</span>
                   <span className="text-xs text-slate-500">{formatCurrency(dayData.revenue)}</span>
