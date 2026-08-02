@@ -757,6 +757,6 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   console.log(`SafeMaster API server running on port ${port}`);
 });
