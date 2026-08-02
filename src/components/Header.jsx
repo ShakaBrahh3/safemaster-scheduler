@@ -16,6 +16,7 @@ export const Header = ({
   onExportSchedule,
   onExportBacklog,
   onImport,
+  onExcelImport,
   onCreateJob
 }) => {
   return (
@@ -60,6 +61,13 @@ export const Header = ({
           >
             <Upload className="h-4 w-4" />
             <span>Import</span>
+          </button>
+          <button 
+            onClick={onExcelImport}
+            className="px-3 py-2 bg-green-600 hover:bg-green-700 border border-green-700 text-sm font-semibold rounded-lg text-white transition-all flex items-center gap-2 shadow"
+          >
+            <Upload className="h-4 w-4" />
+            <span>Excel</span>
           </button>
           <button 
             onClick={onExportSchedule}

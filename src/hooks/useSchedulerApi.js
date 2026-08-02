@@ -327,6 +327,100 @@ export function useSchedulerApi(initialBacklog, initialSchedule, initialCrews) {
     }
   }, [schedule]);
 
+  // ── Excel Upload operations ────────────────────────────────────────────────────────
+
+  /** Upload Excel file to import jobs */
+  const uploadExcelFile = useCallback(async (file, options = {}) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (options && Object.keys(options).length > 0) {
+      formData.append('options', JSON.stringify(options));
+    }
+    
+    try {
+      const response = await fetch('/api/upload/excel', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload Excel file');
+      }
+      
+      const result = await response.json();
+      if (result.ok && result.results?.jobs?.length) {
+        // Add imported jobs to backlog if they have backlog status
+        const importedJobs = result.results.jobs.filter(job => job.status === 'backlog');
+        if (importedJobs.length > 0) {
+          setBacklogState(prev => [...importedJobs, ...prev]);
+        }
+        
+        // Add scheduled jobs to schedule if they have scheduled status
+        const scheduledJobs = result.results.jobs.filter(job => job.status === 'scheduled');
+        if (scheduledJobs.length > 0) {
+          setScheduleState(prev => [...prev, ...scheduledJobs]);
+        }
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Error uploading Excel file:', error);
+      throw error;
+    }
+  }, []);
+
+  /** Preview Excel file without importing */
+  const previewExcelFile = useCallback(async (file, options = {}) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (options && Object.keys(options).length > 0) {
+      formData.append('options', JSON.stringify(options));
+    }
+    
+    try {
+      const response = await fetch('/api/upload/excel-preview', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to preview Excel file');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error previewing Excel file:', error);
+      throw error;
+    }
+  }, []);
+
+  /** Download Excel template */
+  const downloadExcelTemplate = useCallback(async () => {
+    try {
+      const response = await fetch('/api/upload/excel-template');
+      if (!response.ok) {
+        throw new Error('Failed to download Excel template');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'safemaster-jobs-template.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      return true;
+    } catch (error) {
+      console.error('Error downloading Excel template:', error);
+      throw error;
+    }
+  }, []);
+
   return {
     backlog,
     schedule,
@@ -355,6 +449,10 @@ export function useSchedulerApi(initialBacklog, initialSchedule, initialCrews) {
       // Bulk
       applyBulkSchedule,
       importJobs,
+      // Excel Upload
+      uploadExcelFile,
+      previewExcelFile,
+      downloadExcelTemplate,
     },
   };
 }

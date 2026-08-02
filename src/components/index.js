@@ -33,3 +33,6 @@ export {
   TableRowSkeleton,
   ButtonSkeleton
 } from './LoadingSkeleton';
+
+// Import components
+export { ExcelUploadModal } from './ExcelUploadModal';

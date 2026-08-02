@@ -99,6 +99,7 @@ import { NotificationsPanel } from './components/NotificationsPanel';
 import { CrewManagementModal } from './components/CrewComponents';
 import { CreateJobModal, JobDetailModal } from './components/JobModals';
 import { RouteOptimizationModal } from './components/RouteOptimizationModal';
+import { ExcelUploadModal } from './components/ExcelUploadModal';
 import ScheduleGrid from './components/ScheduleGrid';
 import MapPreview from './components/MapPreview';
 
@@ -137,6 +138,7 @@ export default function App() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [csvInput, setCsvInput] = useState("");
   const [importFeedback, setImportFeedback] = useState("");
+  const [showExcelUploadModal, setShowExcelUploadModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newJob, setNewJob] = useState({
     site: "",
@@ -862,6 +864,7 @@ const unqualifiedBacklog = backlog.filter(job => {
           onExportSchedule={handleOpenExportModal}
           onExportBacklog={handleExportBacklogCsv}
           onImport={() => setShowImportModal(true)}
+          onExcelImport={() => setShowExcelUploadModal(true)}
           onCreateJob={() => setShowCreateModal(true)}
         />
 
@@ -1023,6 +1026,16 @@ const unqualifiedBacklog = backlog.filter(job => {
           onDelete={deleteJob}
           onUnschedule={unscheduleJob}
           onSaveEdit={handleSaveJobEdit}
+        />
+
+        <ExcelUploadModal
+          isOpen={showExcelUploadModal}
+          onClose={() => setShowExcelUploadModal(false)}
+          onImportSuccess={(result) => {
+            setImportFeedback(`Successfully imported ${result.results?.total || 0} jobs from Excel`);
+            setTimeout(() => setImportFeedback(""), 3000);
+          }}
+          api={api}
         />
 
         <RouteOptimizationModal

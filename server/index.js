@@ -5,6 +5,8 @@ import pg from 'pg';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import multer from 'multer';
+import xlsx from 'xlsx';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -26,6 +28,9 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: needsSsl(process.env.DATABASE_URL) ? { rejectUnauthorized: false } : false
 });
+
+// Configure multer for file uploads
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Schema init
 async function initSchema() {
@@ -753,6 +758,296 @@ app.get('/api/health', async (req, res) => {
       ok: false,
       error: 'Database connection failed',
       timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Excel Upload API
+
+// Helper function to parse Excel data and convert to jobs
+function parseExcelToJobs(excelData, options = {}) {
+  const { sheetIndex = 0, headerRow = 1, status = 'backlog' } = options;
+  
+  try {
+    // Read the Excel data
+    const workbook = xlsx.read(excelData, { type: 'buffer' });
+    const worksheet = workbook.Sheets[workbook.SheetNames[sheetIndex]];
+    
+    // Convert to JSON
+    const jsonData = xlsx.utils.sheet_to_json(worksheet, { header: headerRow });
+    
+    const jobs = [];
+    
+    jsonData.forEach((row, index) => {
+      // Map Excel columns to job properties
+      const job = {
+        id: row.ID || row.id || `excel-import-${Date.now()}-${index}`,
+        site: row.Site || row.site || row.Location || row.location || row.SITE || 'Unknown Site',
+        cost: parseFloat(row.Cost || row.cost || row.Price || row.price || 0),
+        run: row.Run || row.run || row.Type || row.type || 'PROGRAMMED',
+        notes: row.Notes || row.notes || row.Description || row.description || '',
+        tags: [],
+        ewpRequired: false,
+        requiredTicket: 'WAH',
+        priority: 'normal',
+        status: status,
+        day: row.Date || row.date || null,
+        crewId: row.Crew || row.crew || row['Crew ID'] || row['crew id'] || null,
+        lat: row.Latitude || row.latitude || row.Lat || row.lat || null,
+        lng: row.Longitude || row.longitude || row.Lng || row.lng || null,
+        startTime: row['Start Time'] || row.startTime || row.Start || row.start || '09:00',
+        endTime: row['End Time'] || row.endTime || row.End || row.end || '17:00',
+        duration: parseInt(row.Duration || row.duration || 480),
+        isRecurring: false,
+        parentJobId: null,
+        recurring: null,
+        recurringInstance: null,
+        reminders: []
+      };
+      
+      // Auto-detect ticket requirements from notes
+      if (job.notes.toLowerCase().includes('rope') || job.notes.toLowerCase().includes('descent')) {
+        job.requiredTicket = 'ROPE';
+        job.tags.push('ROPE');
+      } else if (job.notes.toLowerCase().includes('ewp') || job.notes.toLowerCase().includes('elevating')) {
+        job.requiredTicket = 'EWP';
+        job.ewpRequired = true;
+        job.tags.push('EWP');
+      } else if (job.notes.toLowerCase().includes('confined') || job.notes.toLowerCase().includes('pit')) {
+        job.requiredTicket = 'CSE';
+        job.tags.push('CSE');
+      }
+      
+      // Set priority based on notes
+      if (job.notes.toLowerCase().includes('urgent') || job.notes.toLowerCase().includes('emergency')) {
+        job.priority = 'high';
+      } else if (job.notes.toLowerCase().includes('low')) {
+        job.priority = 'low';
+      }
+      
+      // Ensure cost is a valid number
+      job.cost = isNaN(job.cost) ? 0 : job.cost;
+      
+      // Ensure duration is a valid number
+      job.duration = isNaN(job.duration) ? 480 : job.duration;
+      
+      jobs.push(job);
+    });
+    
+    return jobs;
+  } catch (error) {
+    console.error('Error parsing Excel file:', error);
+    throw new Error(`Failed to parse Excel file: ${error.message}`);
+  }
+}
+
+// POST upload Excel file and import jobs
+app.post('/api/upload/excel', upload.single('file'), async (req, res) => {
+  try {
+    // Check if file was uploaded
+    if (!req.file) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'No file uploaded. Please include a file with the field name "file".' 
+      });
+    }
+    
+    // Check if the file is an Excel file
+    const validExtensions = ['.xlsx', '.xls', '.csv'];
+    const fileExtension = req.file.originalname.slice(req.file.originalname.lastIndexOf('.'));
+    
+    if (!validExtensions.includes(fileExtension.toLowerCase())) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Invalid file type. Only .xlsx, .xls, and .csv files are supported.' 
+      });
+    }
+    
+    // Parse the Excel file
+    const options = req.body.options ? JSON.parse(req.body.options) : {};
+    const jobs = parseExcelToJobs(req.file.buffer, options);
+    
+    // Save jobs to database
+    const results = {
+      total: jobs.length,
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      jobs: []
+    };
+    
+    for (const job of jobs) {
+      try {
+        // Check if job already exists
+        const existingJob = await pool.query('SELECT id FROM jobs WHERE id = $1', [job.id]);
+        
+        if (existingJob.rows.length > 0) {
+          // Update existing job
+          await pool.query(
+            `UPDATE jobs SET
+              site=$2, cost=$3, run=$4, notes=$5, tags=$6, ewp_required=$7,
+              required_ticket=$8, priority=$9, status=$10, day=$11, crew_id=$12, lat=$13, lng=$14,
+              start_time=$15, end_time=$16, duration=$17, is_recurring=$18, parent_job_id=$19,
+              recurring=$20, recurring_instance=$21, reminders=$22
+            WHERE id=$1`,
+            [
+              job.id, job.site, job.cost ?? 0, job.run ?? 'PROGRAMMED',
+              job.notes ?? '', JSON.stringify(job.tags ?? []),
+              job.ewpRequired ?? false, job.requiredTicket ?? 'WAH',
+              job.priority ?? 'normal', job.status ?? 'backlog',
+              job.day ?? null, job.crewId ?? null,
+              job.lat ?? null, job.lng ?? null,
+              job.startTime ?? '09:00', job.endTime ?? '17:00', job.duration ?? 480,
+              job.isRecurring ?? false, job.parentJobId ?? null,
+              JSON.stringify(job.recurring ?? null), job.recurringInstance ?? null,
+              JSON.stringify(job.reminders ?? [])
+            ]
+          );
+          results.updated++;
+        } else {
+          // Create new job
+          await pool.query(
+            `INSERT INTO jobs (id, site, cost, run, notes, tags, ewp_required, required_ticket, priority, status, day, crew_id, lat, lng, start_time, end_time, duration, is_recurring, parent_job_id, recurring, recurring_instance, reminders)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+             ON CONFLICT (id) DO UPDATE SET
+               site=$2, cost=$3, run=$4, notes=$5, tags=$6, ewp_required=$7,
+               required_ticket=$8, priority=$9, status=$10, day=$11, crew_id=$12, lat=$13, lng=$14,
+               start_time=$15, end_time=$16, duration=$17, is_recurring=$18, parent_job_id=$19,
+               recurring=$20, recurring_instance=$21, reminders=$22`,
+            [
+              job.id, job.site, job.cost ?? 0, job.run ?? 'PROGRAMMED',
+              job.notes ?? '', JSON.stringify(job.tags ?? []),
+              job.ewpRequired ?? false, job.requiredTicket ?? 'WAH',
+              job.priority ?? 'normal', job.status ?? 'backlog',
+              job.day ?? null, job.crewId ?? null,
+              job.lat ?? null, job.lng ?? null,
+              job.startTime ?? '09:00', job.endTime ?? '17:00', job.duration ?? 480,
+              job.isRecurring ?? false, job.parentJobId ?? null,
+              JSON.stringify(job.recurring ?? null), job.recurringInstance ?? null,
+              JSON.stringify(job.reminders ?? [])
+            ]
+          );
+          results.created++;
+        }
+        
+        results.jobs.push(job);
+      } catch (error) {
+        console.error(`Error processing job ${job.id}:`, error);
+        results.skipped++;
+      }
+    }
+    
+    res.json({ 
+      ok: true, 
+      message: `Successfully imported Excel file. ${results.created} jobs created, ${results.updated} jobs updated, ${results.skipped} jobs skipped.`,
+      results 
+    });
+    
+  } catch (err) {
+    console.error('Error uploading Excel file:', err);
+    res.status(500).json({ 
+      ok: false, 
+      error: err.message || 'Failed to upload and process Excel file.' 
+    });
+  }
+});
+
+// GET Excel template for download (sample format)
+app.get('/api/upload/excel-template', async (req, res) => {
+  try {
+    // Create a sample Excel template
+    const sampleData = [
+      {
+        ID: '',
+        Site: 'Your Site Name',
+        Cost: 500,
+        Run: 'PROGRAMMED',
+        Notes: 'Routine maintenance work',
+        'Required Ticket': 'WAH',
+        Priority: 'normal',
+        Date: '2024-01-01',
+        'Crew ID': '',
+        Latitude: -33.8688,
+        Longitude: 151.2093,
+        'Start Time': '09:00',
+        'End Time': '17:00',
+        Duration: 480
+      },
+      {
+        ID: '',
+        Site: 'Another Site',
+        Cost: 750,
+        Run: 'REACTIVE',
+        Notes: 'Urgent repair work with EWP access',
+        'Required Ticket': 'EWP',
+        Priority: 'high',
+        Date: '2024-01-02',
+        'Crew ID': '',
+        Latitude: -33.8650,
+        Longitude: 151.2100,
+        'Start Time': '08:00',
+        'End Time': '16:00',
+        Duration: 480
+      }
+    ];
+    
+    // Create workbook and worksheet
+    const workbook = xlsx.utils.book_new();
+    const worksheet = xlsx.utils.json_to_sheet(sampleData);
+    xlsx.utils.book_append_sheet(workbook, worksheet, 'Jobs Template');
+    
+    // Generate Excel file
+    const excelBuffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    
+    // Set headers for download
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="safemaster-jobs-template.xlsx"');
+    res.send(excelBuffer);
+    
+  } catch (err) {
+    console.error('Error generating Excel template:', err);
+    res.status(500).json({ 
+      ok: false, 
+      error: err.message || 'Failed to generate Excel template.' 
+    });
+  }
+});
+
+// POST validate Excel file without importing (preview)
+app.post('/api/upload/excel-preview', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'No file uploaded.' 
+      });
+    }
+    
+    const validExtensions = ['.xlsx', '.xls', '.csv'];
+    const fileExtension = req.file.originalname.slice(req.file.originalname.lastIndexOf('.'));
+    
+    if (!validExtensions.includes(fileExtension.toLowerCase())) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Invalid file type. Only .xlsx, .xls, and .csv files are supported.' 
+      });
+    }
+    
+    // Parse the Excel file
+    const options = req.body.options ? JSON.parse(req.body.options) : {};
+    const jobs = parseExcelToJobs(req.file.buffer, { ...options, status: 'preview' });
+    
+    res.json({ 
+      ok: true, 
+      message: `Preview: ${jobs.length} jobs would be imported`,
+      jobs 
+    });
+    
+  } catch (err) {
+    console.error('Error previewing Excel file:', err);
+    res.status(500).json({ 
+      ok: false, 
+      error: err.message || 'Failed to preview Excel file.' 
     });
   }
 });
