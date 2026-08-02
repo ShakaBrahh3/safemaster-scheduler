@@ -25,7 +25,11 @@ export const Dashboard = ({
   schedule,
   backlog,
   crews,
-  days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+  days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+  onCreateJob,
+  onOptimize,
+  onExport,
+  onManageCrews
 }) => {
   
   // Calculate metrics
@@ -338,25 +342,25 @@ export const Dashboard = ({
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
         <h3 className="text-sm font-semibold text-white mb-4">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <button className="p-3 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg border border-slate-700 text-left transition-all group">
+          <button onClick={onCreateJob} className="p-3 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg border border-slate-700 text-left transition-all group">
             <p className="text-xs text-slate-400 mb-1">New Job</p>
             <p className="text-sm font-semibold text-white flex items-center gap-1.5">
               <Plus className="h-4 w-4" /> Add Job
             </p>
           </button>
-          <button className="p-3 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg border border-slate-700 text-left transition-all group">
+          <button onClick={onOptimize} className="p-3 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg border border-slate-700 text-left transition-all group">
             <p className="text-xs text-slate-400 mb-1">Optimize</p>
             <p className="text-sm font-semibold text-white flex items-center gap-1.5">
               <Sparkles className="h-4 w-4" /> AI Route
             </p>
           </button>
-          <button className="p-3 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg border border-slate-700 text-left transition-all group">
+          <button onClick={onExport} className="p-3 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg border border-slate-700 text-left transition-all group">
             <p className="text-xs text-slate-400 mb-1">Export</p>
             <p className="text-sm font-semibold text-white flex items-center gap-1.5">
               <Download className="h-4 w-4" /> Schedule
             </p>
           </button>
-          <button className="p-3 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg border border-slate-700 text-left transition-all group">
+          <button onClick={onManageCrews} className="p-3 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg border border-slate-700 text-left transition-all group">
             <p className="text-xs text-slate-400 mb-1">Crews</p>
             <p className="text-sm font-semibold text-white flex items-center gap-1.5">
               <Users className="h-4 w-4" /> Manage
