@@ -827,17 +827,70 @@ app.get('/api/health', async (req, res) => {
 
 // Excel Upload API
 
+// Helper: normalize an Excel time value (numeric day-fraction or HH:mm string) to "HH:mm"
+function normalizeTime(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') {
+    // SheetJS returns time-only cells as a fraction of a day
+    const totalMinutes = Math.round(value * 24 * 60);
+    const h = Math.floor(totalMinutes / 60) % 24;
+    const m = totalMinutes % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+  const str = String(value).trim();
+  // Accept "HH:mm", "H:mm", "HH:mm:ss"
+  const match = str.match(/^(\d{1,2}):(\d{2})/);
+  if (match) {
+    return `${String(parseInt(match[1], 10)).padStart(2, '0')}:${match[2]}`;
+  }
+  return null;
+}
+
+// Day names accepted as-is; map common date representations to scheduler day keys
+const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const DAY_ALIASES = {
+  mon: 'Monday', monday: 'Monday',
+  tue: 'Tuesday', tues: 'Tuesday', tuesday: 'Tuesday',
+  wed: 'Wednesday', wednesday: 'Wednesday',
+  thu: 'Thursday', thur: 'Thursday', thurs: 'Thursday', thursday: 'Thursday',
+  fri: 'Friday', friday: 'Friday'
+};
+
+function normalizeDay(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') {
+    // Excel serial date: convert to JS Date and extract day name
+    // Excel epoch is Dec 30 1899; serial 1 = Jan 1 1900
+    const jsDate = new Date(Math.round((value - 25569) * 86400 * 1000));
+    const name = jsDate.toLocaleDateString('en-AU', { weekday: 'long', timeZone: 'UTC' });
+    return DAY_NAMES.includes(name) ? name : null;
+  }
+  const str = String(value).trim();
+  // Direct match
+  if (DAY_NAMES.includes(str)) return str;
+  // Alias match (case-insensitive)
+  const alias = DAY_ALIASES[str.toLowerCase()];
+  if (alias) return alias;
+  // Try parsing as a date string
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    const name = d.toLocaleDateString('en-AU', { weekday: 'long', timeZone: 'UTC' });
+    return DAY_NAMES.includes(name) ? name : null;
+  }
+  return null;
+}
+
 // Helper function to parse Excel data and convert to jobs
 function parseExcelToJobs(excelData, options = {}) {
-  const { sheetIndex = 0, headerRow = 1, status = 'backlog' } = options;
+  const { sheetIndex = 0, status = 'backlog' } = options;
   
   try {
     // Read the Excel data
-    const workbook = xlsx.read(excelData, { type: 'buffer' });
+    const workbook = xlsx.read(excelData, { type: 'buffer', cellDates: false });
     const worksheet = workbook.Sheets[workbook.SheetNames[sheetIndex]];
     
-    // Convert to JSON
-    const jsonData = xlsx.utils.sheet_to_json(worksheet, { header: headerRow });
+    // Convert to JSON using keyed objects (no header override so SheetJS uses first row as keys)
+    const jsonData = xlsx.utils.sheet_to_json(worksheet, { defval: null });
     
     const jobs = [];
     
@@ -847,8 +900,31 @@ function parseExcelToJobs(excelData, options = {}) {
       const explicitTicket = getCellValue(row, ['Required Ticket', 'requiredTicket', 'required_ticket', 'Ticket', 'ticket']);
       const explicitPriority = getCellValue(row, ['Priority', 'priority']);
       const explicitEwpRequired = getCellValue(row, ['EWP Required', 'ewpRequired', 'ewp_required']);
+      const rawId = getCellValue(row, ['ID', 'id']);
+      const rawStartTime = getCellValue(row, ['Start Time', 'startTime', 'Start', 'start']);
+      const rawEndTime = getCellValue(row, ['End Time', 'endTime', 'End', 'end']);
+      const rawDay = getCellValue(row, ['Date', 'date', 'Day', 'day']);
+      const rawCrewId = getCellValue(row, ['Crew', 'crew', 'Crew ID', 'crew id', 'crewId']);
+
+      // Normalize time values (Excel may return day-fractions for time cells)
+      const startTime = normalizeTime(rawStartTime) || '09:00';
+      const endTime = normalizeTime(rawEndTime) || '17:00';
+
+      // Normalize day to scheduler day key (Monday–Friday) or null
+      const day = normalizeDay(rawDay);
+
+      // Always stringify IDs so Map/Set identity works with DB string IDs
+      const id = rawId !== null && rawId !== undefined && rawId !== ''
+        ? String(rawId)
+        : `excel-import-${Date.now()}-${index}`;
+
+      // Normalize crew ID to string as well
+      const crewId = rawCrewId !== null && rawCrewId !== undefined && rawCrewId !== ''
+        ? String(rawCrewId)
+        : null;
+
       const job = {
-        id: getCellValue(row, ['ID', 'id']) || `excel-import-${Date.now()}-${index}`,
+        id,
         site: getCellValue(row, ['Site', 'site', 'Location', 'location', 'SITE']) || 'Unknown Site',
         cost: parseFloat(getCellValue(row, ['Cost', 'cost', 'Price', 'price']) || 0),
         run: getCellValue(row, ['Run', 'run', 'Type', 'type']) || 'PROGRAMMED',
@@ -858,12 +934,12 @@ function parseExcelToJobs(excelData, options = {}) {
         requiredTicket: normalizeTicket(explicitTicket, 'WAH'),
         priority: normalizePriority(explicitPriority, notes),
         status: status,
-        day: getCellValue(row, ['Date', 'date', 'Day', 'day']),
-        crewId: getCellValue(row, ['Crew', 'crew', 'Crew ID', 'crew id', 'crewId']),
+        day,
+        crewId,
         lat: getCellValue(row, ['Latitude', 'latitude', 'Lat', 'lat']),
         lng: getCellValue(row, ['Longitude', 'longitude', 'Lng', 'lng']),
-        startTime: getCellValue(row, ['Start Time', 'startTime', 'Start', 'start']) || '09:00',
-        endTime: getCellValue(row, ['End Time', 'endTime', 'End', 'end']) || '17:00',
+        startTime,
+        endTime,
         duration: parseInt(getCellValue(row, ['Duration', 'duration']) || 480, 10),
         isRecurring: false,
         parentJobId: null,
@@ -872,17 +948,20 @@ function parseExcelToJobs(excelData, options = {}) {
         reminders: []
       };
       
-      // Auto-detect ticket requirements from notes
-      if (job.notes.toLowerCase().includes('rope') || job.notes.toLowerCase().includes('descent')) {
-        job.requiredTicket = 'ROPE';
-        if (!job.tags.includes('ROPE')) job.tags.push('ROPE');
-      } else if (job.notes.toLowerCase().includes('ewp') || job.notes.toLowerCase().includes('elevating')) {
-        job.requiredTicket = 'EWP';
-        job.ewpRequired = true;
-        if (!job.tags.includes('EWP')) job.tags.push('EWP');
-      } else if (job.notes.toLowerCase().includes('confined') || job.notes.toLowerCase().includes('pit')) {
-        job.requiredTicket = 'CSE';
-        if (!job.tags.includes('CSE')) job.tags.push('CSE');
+      // Only infer ticket from notes when no explicit ticket was provided
+      if (!explicitTicket) {
+        const notesLower = job.notes.toLowerCase();
+        if (notesLower.includes('rope') || notesLower.includes('descent')) {
+          job.requiredTicket = 'ROPE';
+          if (!job.tags.includes('ROPE')) job.tags.push('ROPE');
+        } else if (notesLower.includes('ewp') || notesLower.includes('elevating')) {
+          job.requiredTicket = 'EWP';
+          job.ewpRequired = true;
+          if (!job.tags.includes('EWP')) job.tags.push('EWP');
+        } else if (notesLower.includes('confined') || notesLower.includes('pit')) {
+          job.requiredTicket = 'CSE';
+          if (!job.tags.includes('CSE')) job.tags.push('CSE');
+        }
       }
 
       if (job.requiredTicket === 'EWP') {
