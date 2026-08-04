@@ -2,6 +2,14 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 
 const STORAGE_KEY = 'safemaster-scheduler-state-v1';
 
+function mergeJobsById(existingJobs, incomingJobs) {
+  const merged = new Map(existingJobs.map(job => [job.id, job]));
+  for (const job of incomingJobs) {
+    merged.set(job.id, job);
+  }
+  return Array.from(merged.values());
+}
+
 function readPersistedState() {
   if (typeof window === 'undefined') return null;
   try {
@@ -353,13 +361,17 @@ export function useSchedulerApi(initialBacklog, initialSchedule, initialCrews) {
         // Add imported jobs to backlog if they have backlog status
         const importedJobs = result.results.jobs.filter(job => job.status === 'backlog');
         if (importedJobs.length > 0) {
-          setBacklogState(prev => [...importedJobs, ...prev]);
+          setBacklogState(prev => mergeJobsById(prev, importedJobs));
+          const importedIds = new Set(importedJobs.map(job => job.id));
+          setScheduleState(prev => prev.filter(job => !importedIds.has(job.id)));
         }
         
         // Add scheduled jobs to schedule if they have scheduled status
         const scheduledJobs = result.results.jobs.filter(job => job.status === 'scheduled');
         if (scheduledJobs.length > 0) {
-          setScheduleState(prev => [...prev, ...scheduledJobs]);
+          setScheduleState(prev => mergeJobsById(prev, scheduledJobs));
+          const scheduledIds = new Set(scheduledJobs.map(job => job.id));
+          setBacklogState(prev => prev.filter(job => !scheduledIds.has(job.id)));
         }
       }
       
